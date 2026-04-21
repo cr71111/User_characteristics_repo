@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-L0 Raw Ingest - 原始数据摄入层
+L0 Raw Ingest - 原始数据摄入层（超高性能版）
 职责：把原始 CSV 转成干净的 Parquet，不做任何业务推断。
+
+性能优化策略：
+1. 批处理：每100个文件为一批，避免内存爆炸
+2. 按日期拆分写入：每个批次直接按日期写入临时文件，避免主进程groupby
+3. 最终合并：只需简单concat同一天文件，无需复杂操作
+4. 列选择：只读取需要的列，减少内存占用
 
 输入：IoT CSV 文件
 输出：raw/{date}.parquet
@@ -9,10 +15,14 @@ L0 Raw Ingest - 原始数据摄入层
 
 import os
 import sys
+import time
+import tempfile
+import shutil
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Tuple
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
@@ -48,10 +58,15 @@ COLUMN_NORMALIZE_MAP = {
 
 REQUIRED_COLUMNS_RAW = ['时间戳', '合约id', '用户id', '纬度', '经度', '电流', '温度', '速度', '电池SOC']
 
-VALID_ONLINE_VALUES = ['在线', '1', 'true', 'online', '是']
+# 预计算在线状态的有效值集合（小写）
+VALID_ONLINE_VALUES_SET = {'在线', '1', 'true', 'online', '是'}
 
 CHINA_LAT_MIN, CHINA_LAT_MAX = 3, 54
 CHINA_LON_MIN, CHINA_LON_MAX = 73, 136
+
+# 并行和批处理配置
+MAX_WORKERS = min(8, os.cpu_count() or 4)  # 最多8个进程
+BATCH_SIZE = 100  # 每批处理的文件数
 
 
 def normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
@@ -64,9 +79,122 @@ def normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
     return df.rename(columns=rename_map)
 
 
+def get_existing_dates(output_dir: str) -> set:
+    """获取已存在的日期parquet文件"""
+    existing = set()
+    if os.path.exists(output_dir):
+        for f in os.listdir(output_dir):
+            if f.endswith('.parquet'):
+                date_str = f.replace('.parquet', '')
+                existing.add(date_str)
+    return existing
+
+
+def process_batch(file_batch: List[str], temp_dir: str, batch_idx: int, existing_dates: set = None) -> Optional[List[str]]:
+    """
+    处理一批CSV文件，按日期拆分写入临时parquet文件
+    
+    Args:
+        file_batch: 文件路径列表
+        temp_dir: 临时文件目录
+        batch_idx: 批次索引
+        existing_dates: 已存在的日期集合（跳过这些日期）
+    
+    Returns:
+        生成的临时文件路径列表
+    """
+    if existing_dates is None:
+        existing_dates = set()
+    
+    try:
+        # 按日期收集数据
+        date_data: Dict[str, List[pd.DataFrame]] = {}
+        
+        for file_path in file_batch:
+            try:
+                # 只读取需要的列
+                df = pd.read_csv(
+                    file_path, 
+                    encoding='utf-8', 
+                    low_memory=False,
+                    usecols=lambda x: x in REQUIRED_COLUMNS_RAW or x.strip() in COLUMN_NORMALIZE_MAP
+                )
+                
+                if len(df) == 0:
+                    continue
+                
+                # 字段标准化
+                df = normalize_column_names(df)
+                
+                # 检查核心字段
+                missing_cols = [c for c in REQUIRED_COLUMNS_RAW if c not in df.columns]
+                if missing_cols:
+                    continue
+                
+                # 在线状态过滤
+                if '是否在线' in df.columns:
+                    online_col = df['是否在线'].astype(str).str.strip().str.lower()
+                    mask = online_col.isin(VALID_ONLINE_VALUES_SET)
+                    df = df[mask]
+                    
+                    if len(df) == 0:
+                        continue
+                
+                # 批量数值转换
+                numeric_cols = ['时间戳', '纬度', '经度', '电流', '温度', '速度']
+                cols_to_convert = [c for c in numeric_cols if c in df.columns]
+                if cols_to_convert:
+                    df[cols_to_convert] = df[cols_to_convert].apply(pd.to_numeric, errors='coerce')
+                
+                # 中国境内粗过滤
+                df = df[
+                    (df['纬度'] >= CHINA_LAT_MIN) & (df['纬度'] <= CHINA_LAT_MAX) &
+                    (df['经度'] >= CHINA_LON_MIN) & (df['经度'] <= CHINA_LON_MAX)
+                ]
+                
+                if len(df) == 0:
+                    continue
+                
+                # 提取统计日期
+                if '统计日期' not in df.columns:
+                    df['统计日期'] = pd.to_datetime(df['时间戳'], unit='s', errors='coerce').dt.strftime('%Y-%m-%d')
+                else:
+                    df['统计日期'] = pd.to_datetime(df['统计日期'], errors='coerce').dt.strftime('%Y-%m-%d')
+                
+                # 确保类型
+                df['用户id'] = df['用户id'].astype(str)
+                df['合约id'] = df['合约id'].astype(str)
+                df['时间戳'] = df['时间戳'].astype('int64')
+                
+                # 按日期分组收集（跳过已存在的日期）
+                for date_str, df_day in df.groupby('统计日期'):
+                    if date_str in existing_dates:
+                        continue  # 跳过已存在的日期
+                    if date_str not in date_data:
+                        date_data[date_str] = []
+                    date_data[date_str].append(df_day)
+                
+            except Exception:
+                continue
+        
+        # 按日期写入临时文件
+        temp_files = []
+        for date_str, df_list in date_data.items():
+            df_date = pd.concat(df_list, ignore_index=True)
+            temp_file = os.path.join(temp_dir, f"{date_str}_batch{batch_idx}.parquet")
+            df_date.to_parquet(temp_file, engine='pyarrow', compression='snappy')
+            temp_files.append(temp_file)
+        
+        return temp_files
+        
+    except Exception as e:
+        print(f"⚠️ 批次 {batch_idx} 处理失败: {e}")
+        return None
+
+
 def ingest_raw_data(target_date: Optional[str] = None, base_path: str = BASE_EXPORT_PATH) -> dict:
     """
-    执行 L0 原始数据摄入
+    执行 L0 原始数据摄入（超高性能版）
 
     Args:
         target_date: 目标日期 YYYY-MM-DD，None 则处理所有日期
@@ -76,8 +204,10 @@ def ingest_raw_data(target_date: Optional[str] = None, base_path: str = BASE_EXP
         dict: {date_str: parquet_path} 已处理的文件映射
     """
     print("\n" + "=" * 80)
-    print("L0 Raw Ingest - 原始数据摄入层")
+    print("L0 Raw Ingest - 原始数据摄入层（超高性能版）")
     print("=" * 80)
+    
+    start_time = time.time()
 
     raw_data_paths = {
         "历史30天-前4天": os.path.join(base_path, EXPORT_PATH_BATTERY_STATUS_30D),
@@ -87,7 +217,12 @@ def ingest_raw_data(target_date: Optional[str] = None, base_path: str = BASE_EXP
     output_dir = EXPORT_PATH_RAW
     os.makedirs(output_dir, exist_ok=True)
 
-    # 收集所有原始数据文件（递归扫描日期子目录）
+    # 获取已存在的日期（跳过已处理的日期）
+    existing_dates = get_existing_dates(output_dir)
+    if existing_dates:
+        print(f"📋 已存在 {len(existing_dates)} 个日期的数据: {sorted(existing_dates)}")
+
+    # 收集所有原始数据文件
     all_files = []
     for folder_name, folder_path in raw_data_paths.items():
         if os.path.exists(folder_path):
@@ -100,85 +235,98 @@ def ingest_raw_data(target_date: Optional[str] = None, base_path: str = BASE_EXP
         print("❌ 未找到原始数据文件")
         return {}
 
-    print(f"📂 找到 {len(all_files)} 个原始数据文件")
+    total_files = len(all_files)
+    print(f"📂 找到 {total_files} 个原始数据文件")
+    print(f"⚡ 使用 {MAX_WORKERS} 个并行进程，每批 {BATCH_SIZE} 个文件")
 
-    processed = {}
+    # 创建临时目录
+    temp_dir = tempfile.mkdtemp(prefix="l0_ingest_")
+    print(f"📁 临时目录: {temp_dir}")
+    
+    try:
+        # 分批处理
+        batches = [all_files[i:i+BATCH_SIZE] for i in range(0, total_files, BATCH_SIZE)]
+        total_batches = len(batches)
+        print(f"📦 分为 {total_batches} 批处理\n")
+        
+        batch_start = time.time()
+        date_temp_files: Dict[str, List[str]] = {}
+        
+        with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {executor.submit(process_batch, batch, temp_dir, i, existing_dates): i for i, batch in enumerate(batches)}
+            
+            for future in as_completed(futures):
+                batch_idx = futures[future]
+                try:
+                    temp_files = future.result()
+                    if temp_files:
+                        # 按日期收集临时文件
+                        for temp_file in temp_files:
+                            # 从文件名提取日期: 2026-03-20_batch0.parquet
+                            date_str = os.path.basename(temp_file).split('_batch')[0]
+                            if date_str not in date_temp_files:
+                                date_temp_files[date_str] = []
+                            date_temp_files[date_str].append(temp_file)
+                    
+                    # 进度显示
+                    elapsed = time.time() - batch_start
+                    speed = (batch_idx + 1) / elapsed if elapsed > 0 else 0
+                    eta = (total_batches - batch_idx - 1) / speed if speed > 0 else 0
+                    print(f"   📊 批次 {batch_idx+1}/{total_batches} 完成 ({speed:.1f} 批/秒, 预计剩余 {eta:.0f}s)")
+                    
+                except Exception as e:
+                    print(f"⚠️ 批次 {batch_idx} 处理失败: {e}")
+        
+        print(f"\n✅ 所有批次完成，共 {len(date_temp_files)} 个待处理日期，耗时 {time.time()-batch_start:.2f}s")
+        
+        if not date_temp_files:
+            print("✅ 所有日期数据已存在，无需处理")
+            return {d: os.path.join(output_dir, f"{d}.parquet") for d in existing_dates}
+        
+        # 合并每个日期的临时文件
+        merge_start = time.time()
+        print("🔄 开始合并每个日期的数据...")
+        
+        processed = {}
+        for date_str, temp_files in date_temp_files.items():
+            if target_date and date_str != target_date:
+                continue
 
-    # 先按日期分组收集所有数据
-    date_data = {}
-    for file_path in all_files:
-        try:
-            df = pd.read_csv(file_path, encoding='utf-8', low_memory=False)
-        except Exception as e:
-            print(f"⚠️ 读取文件失败 {file_path}: {e}")
-            continue
+            output_path = os.path.join(output_dir, f"{date_str}.parquet")
 
-        # 字段标准化
-        df = normalize_column_names(df)
+            # 幂等检查（双重保险）
+            if os.path.exists(output_path):
+                print(f"⏭️  L0 已存在，跳过: {output_path}")
+                processed[date_str] = output_path
+                continue
 
-        # 检查核心字段
-        missing_cols = [c for c in REQUIRED_COLUMNS_RAW if c not in df.columns]
-        if missing_cols:
-            print(f"⚠️ 文件 {file_path} 缺少核心字段: {missing_cols}")
-            continue
+            # 读取并合并同一天的所有临时文件
+            df_list = []
+            for temp_file in temp_files:
+                df_temp = pd.read_parquet(temp_file)
+                df_list.append(df_temp)
+            
+            df_merged = pd.concat(df_list, ignore_index=True)
+            
+            # 去重
+            df_merged = df_merged.drop_duplicates(subset=['合约id', '用户id', '时间戳'], keep='last')
 
-        # 过滤离线记录
-        if '是否在线' in df.columns:
-            df = df[df['是否在线'].astype(str).str.lower().isin([v.lower() for v in VALID_ONLINE_VALUES])]
-
-        # 数值转换
-        for col in ['时间戳', '纬度', '经度', '电流', '温度', '速度']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-
-        # 中国境内粗过滤
-        df = df[
-            (df['纬度'] >= CHINA_LAT_MIN) & (df['纬度'] <= CHINA_LAT_MAX) &
-            (df['经度'] >= CHINA_LON_MIN) & (df['经度'] <= CHINA_LON_MAX)
-        ]
-
-        # 提取统计日期
-        if '统计日期' not in df.columns:
-            df['统计日期'] = pd.to_datetime(df['时间戳'], unit='s').dt.strftime('%Y-%m-%d')
-        else:
-            df['统计日期'] = pd.to_datetime(df['统计日期']).dt.strftime('%Y-%m-%d')
-
-        # 确保类型
-        df['用户id'] = df['用户id'].astype(str)
-        df['合约id'] = df['合约id'].astype(str)
-        df['时间戳'] = df['时间戳'].astype('int64')
-
-        # 按日期收集
-        for date_str, df_day in df.groupby('统计日期'):
-            if date_str not in date_data:
-                date_data[date_str] = []
-            date_data[date_str].append(df_day)
-
-    # 合并同一天所有数据并保存
-    for date_str, df_list in date_data.items():
-        if target_date and date_str != target_date:
-            continue
-
-        output_path = os.path.join(output_dir, f"{date_str}.parquet")
-
-        # 幂等检查
-        if os.path.exists(output_path):
-            print(f"⏭️  L0 已存在，跳过: {output_path}")
+            df_merged.to_parquet(output_path, engine='pyarrow', compression='snappy')
+            print(f"✅ L0 保存: {output_path} ({len(df_merged):,} 行, 合并 {len(temp_files)} 个批次)")
             processed[date_str] = output_path
-            continue
-
-        # 合并同一天所有文件的数据
-        df_merged = pd.concat(df_list, ignore_index=True)
-
-        # 去重（合并后统一去重）
-        df_merged = df_merged.drop_duplicates(subset=['合约id', '用户id', '时间戳'], keep='last')
-
-        df_merged.to_parquet(output_path, engine='pyarrow', compression='snappy')
-        print(f"✅ L0 保存: {output_path} ({len(df_merged)} 行, 合并 {len(df_list)} 个文件)")
-        processed[date_str] = output_path
-
-    print(f"\n✅ L0 Raw Ingest 完成，处理 {len(processed)} 个日期")
-    return processed
+        
+        print(f"\n✅ L0 Raw Ingest 完成")
+        print(f"   处理日期数: {len(processed)}")
+        print(f"   总耗时: {time.time()-start_time:.2f}s")
+        print(f"     - 批处理: {batch_start-start_time:.2f}s")
+        print(f"     - 合并保存: {time.time()-merge_start:.2f}s")
+        
+        return processed
+        
+    finally:
+        # 清理临时文件
+        print(f"🧹 清理临时目录...")
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

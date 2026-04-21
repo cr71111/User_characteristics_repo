@@ -31,22 +31,46 @@ src_dir = os.path.dirname(__file__)
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
-from config.config import BASE_EXPORT_PATH
+from config.config import BASE_EXPORT_PATH, EXPORT_PATH_RAW
 
 # 使用兼容两种运行方式的导入
 try:
-    from raw_ingest import ingest_raw_data
+    from raw_ingest import ingest_raw_data, get_existing_dates
     from fact_layer import process_fact_layer
     from snapshot_layer import process_snapshot_layer
     from lifecycle_layer import process_lifecycle_layer
     from report_layer import process_report_layer
 except ImportError:
     # 如果上述导入失败，尝试从src包导入
-    from src.raw_ingest import ingest_raw_data
+    from src.raw_ingest import ingest_raw_data, get_existing_dates
     from src.fact_layer import process_fact_layer
     from src.snapshot_layer import process_snapshot_layer
     from src.lifecycle_layer import process_lifecycle_layer
     from src.report_layer import process_report_layer
+
+
+def run_l0_if_needed(target_date: str = None, base_path: str = BASE_EXPORT_PATH):
+    """智能执行L0：只处理缺失的日期"""
+    from datetime import datetime as dt
+    
+    # 获取已存在的日期
+    existing_dates = get_existing_dates(EXPORT_PATH_RAW)
+    
+    if target_date:
+        # 指定了目标日期
+        if target_date in existing_dates:
+            print(f"⏭️  L0 跳过：{target_date} 数据已存在")
+            return
+        else:
+            print(f"📥  L0 执行：{target_date} 数据缺失，开始处理")
+            ingest_raw_data(target_date=target_date, base_path=base_path)
+    else:
+        # 未指定日期，需要处理所有日期
+        if existing_dates:
+            print(f"📋 L0 智能模式：已存在 {len(existing_dates)} 个日期，只处理缺失的日期")
+        else:
+            print(f"📥 L0 全量模式：无现有数据，处理所有日期")
+        ingest_raw_data(target_date=None, base_path=base_path)
 
 
 def run_full_pipeline(target_date: str = None, base_path: str = BASE_EXPORT_PATH):
@@ -57,8 +81,8 @@ def run_full_pipeline(target_date: str = None, base_path: str = BASE_EXPORT_PATH
 
     start_time = datetime.now()
 
-    # L0
-    ingest_raw_data(target_date=target_date, base_path=base_path)
+    # L0 - 智能执行，只处理缺失的日期
+    run_l0_if_needed(target_date=target_date, base_path=base_path)
 
     # L1
     process_fact_layer(target_date=target_date, base_path=base_path)
@@ -88,8 +112,8 @@ def run_incremental(target_date: str = None, base_path: str = BASE_EXPORT_PATH):
 
     start_time = datetime.now()
 
-    # L0
-    ingest_raw_data(target_date=target_date, base_path=base_path)
+    # L0 - 智能执行，只处理缺失的日期
+    run_l0_if_needed(target_date=target_date, base_path=base_path)
 
     # L1
     process_fact_layer(target_date=target_date, base_path=base_path)
@@ -115,6 +139,9 @@ def run_refresh(target_date: str = None, base_path: str = BASE_EXPORT_PATH):
 
     start_time = datetime.now()
 
+    # L0 - 智能执行，只处理缺失的日期
+    run_l0_if_needed(target_date=target_date, base_path=base_path)
+
     # L2
     process_snapshot_layer(target_date=target_date, base_path=base_path)
 
@@ -135,6 +162,9 @@ def run_recalculate(target_date: str = None, base_path: str = BASE_EXPORT_PATH):
     print("=" * 80)
 
     start_time = datetime.now()
+
+    # L0 - 智能执行，只处理缺失的日期
+    run_l0_if_needed(target_date=target_date, base_path=base_path)
 
     # L3
     process_lifecycle_layer(target_date=target_date, base_path=base_path)
