@@ -1,0 +1,531 @@
+# -*- coding: utf-8 -*-
+"""
+L2 Snapshot Layer - 用户日级快照层
+职责：将合约日级事实聚合为用户日级快照，并做日级评分和客户形态判定。
+
+输入：fact/daily/{date}.parquet
+输出：snapshot/user_daily.parquet（追加写入，保留历史）
+"""
+
+import os
+import sys
+import warnings
+from typing import Optional
+
+import pandas as pd
+import numpy as np
+
+warnings.filterwarnings('ignore')
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from config.config import BASE_EXPORT_PATH, EXPORT_PATH_FACT_DAILY, EXPORT_PATH_SNAPSHOT
+
+VALID_RIDE_MIN_HOUR = 0.1
+STORAGE_MIN_VALID_GPS_POINTS = 10
+STORAGE_MAX_DISTANCE_KM = 1.0
+STORAGE_MAX_AVG_SPEED_KMH = 3.0
+STORAGE_DISCHARGE_RATIO_THRESHOLD = 3.0
+STORAGE_MIN_DISCHARGE_HOUR = 2.0
+STORAGE_RIDE_DURATION_RATIO = 0.1
+MODIFY_SPEED_THRESHOLD = 50
+MODIFY_CURRENT_THRESHOLD = 24
+PATTERN_DOMINANT_RATIO = 0.5
+
+SOC_LOW_WARNING = 20
+SOC_CRITICAL = 10
+SOC_OPTIMAL_LOWER = 30
+SOC_OPTIMAL_UPPER = 80
+SOC_OPTIMAL_BONUS = 3
+SOC_LOW_RATIO_DEDUCT_THRESHOLD = 0.05
+SOC_CRITICAL_RATIO_DEDUCT_THRESHOLD = 0.01
+MAX_SOC_DEDUCT = 15
+
+HIGH_ENERGY_THRESHOLD = 12
+EXTREME_ENERGY_THRESHOLD = 17
+MAX_NORMAL_BATTERY_CHANGE = 3
+EXCESS_CHANGE_DEDUCT_PER_TIME = 2
+MAX_CHANGE_DEDUCT = 8
+MAX_ENERGY_DEDUCT = 12
+
+VIOLENT_CURRENT_TIMES = 2
+OVER_CURRENT_MIN_HOUR = 0.1
+HIGH_LOSS_CURRENT_TIMES = 5
+
+NOON_PEAK_HOURS = set(range(11, 14))
+EVENING_PEAK_HOURS = set(range(17, 20))
+
+
+def determine_customer_type(total_riding_hours, total_distance, idle_discharge_hours, total_discharge_hours, 
+                           max_speed, riding_avg_current, peak_riding_ratio, n):
+    """客户形态判定（严格按照旧脚本逻辑）"""
+    has_real_ride = (total_riding_hours >= VALID_RIDE_MIN_HOUR) and (total_distance > 0)
+    no_real_ride = not has_real_ride
+    valid_gps_enough = (n >= STORAGE_MIN_VALID_GPS_POINTS)
+    avg_speed = total_distance / total_riding_hours if total_riding_hours > 0.01 else 0
+
+    very_short_distance = (total_distance < STORAGE_MAX_DISTANCE_KM)
+    very_low_speed = (avg_speed < STORAGE_MAX_AVG_SPEED_KMH)
+
+    discharge_much_longer = (
+        (idle_discharge_hours > total_riding_hours * STORAGE_DISCHARGE_RATIO_THRESHOLD) & 
+        (idle_discharge_hours >= STORAGE_MIN_DISCHARGE_HOUR) &
+        (total_riding_hours < 0.5)
+    )
+    ride_ratio_low = (total_riding_hours / total_discharge_hours < STORAGE_RIDE_DURATION_RATIO) if total_discharge_hours > 0 else True
+
+    is_storage_scene = no_real_ride and valid_gps_enough and very_short_distance and very_low_speed and discharge_much_longer and ride_ratio_low
+
+    if max_speed >= MODIFY_SPEED_THRESHOLD and riding_avg_current >= MODIFY_CURRENT_THRESHOLD and has_real_ride:
+        return "改装/超速车"
+    elif is_storage_scene:
+        return "地摊/储能"
+    elif has_real_ride and total_riding_hours >= 4.0 and peak_riding_ratio >= 0.3:
+        return "专送骑手"
+    elif has_real_ride and total_riding_hours >= 2.0 and peak_riding_ratio >= 0.15:
+        return "众包骑手"
+    elif has_real_ride and total_distance <= 30 and total_riding_hours <= 2.0:
+        return "标准骑手"
+    elif has_real_ride:
+        return "普通骑手"
+    else:
+        return "数据不足"
+
+
+def _calc_monthly_score_v2(
+    max_speed, max_temp, riding_avg_current,
+    current_60a_count, current_80a_count, over100a_cont,
+    max_trip_current_cv, current_cv, avg_riding_speed,
+    soc_data_valid, has_real_ride, soc_below_10_ratio, soc_below_20_ratio,
+    min_soc, avg_soc,
+    energy_data_valid, energy_per_100km, battery_change_count,
+    daily_distance=0, battery_change_cnt=0
+):
+    """包月友好评分（严格按照旧脚本逻辑）"""
+    if daily_distance == 0 and battery_change_cnt == 0:
+        return 20
+
+    score = 100.0
+
+    if max_speed >= 80:
+        score -= 10
+    elif max_speed >= 60:
+        score -= 6
+    elif max_speed >= 50:
+        score -= 3
+
+    if max_temp >= 70:
+        score -= 8
+    elif max_temp >= 55:
+        score -= 4
+
+    if riding_avg_current >= 40.4:
+        score -= 15
+    elif riding_avg_current >= 32.1:
+        score -= 10
+    elif riding_avg_current >= 28.3:
+        score -= 5
+    elif riding_avg_current >= 22.3:
+        score -= 2
+
+    deduct_80a = min(current_80a_count * 1.5, 8)
+    score -= deduct_80a
+
+    if over100a_cont > 0:
+        score -= min(over100a_cont * 4, 12)
+
+    if max_trip_current_cv >= 1.5:
+        score -= 4
+    elif current_cv >= 0.8:
+        score -= 2 if avg_riding_speed <= 15 else 4
+    elif current_cv >= 0.5:
+        score -= 1
+
+    soc_deduct = 0.0
+    if soc_data_valid and has_real_ride:
+        if soc_below_10_ratio >= SOC_CRITICAL_RATIO_DEDUCT_THRESHOLD:
+            soc_deduct += min((soc_below_10_ratio - SOC_CRITICAL_RATIO_DEDUCT_THRESHOLD) / 0.01 * 2, 8)
+
+        if soc_below_20_ratio >= SOC_LOW_RATIO_DEDUCT_THRESHOLD:
+            soc_deduct += min((soc_below_20_ratio - SOC_LOW_RATIO_DEDUCT_THRESHOLD) / 0.02 * 1.5, 5)
+
+        if min_soc <= 5:
+            soc_deduct += 4
+        elif min_soc <= 10:
+            soc_deduct += 2
+
+        if (SOC_OPTIMAL_LOWER <= avg_soc <= SOC_OPTIMAL_UPPER) and soc_below_20_ratio == 0:
+            score += SOC_OPTIMAL_BONUS
+
+    score -= min(soc_deduct, MAX_SOC_DEDUCT)
+
+    energy_deduct = 0.0
+    if energy_data_valid and has_real_ride:
+        if energy_per_100km >= EXTREME_ENERGY_THRESHOLD:
+            energy_deduct += 8
+        elif energy_per_100km >= HIGH_ENERGY_THRESHOLD:
+            energy_deduct += 4
+        elif energy_per_100km >= 10.56:
+            energy_deduct += 2
+
+        excess = max(0, battery_change_count - MAX_NORMAL_BATTERY_CHANGE)
+        energy_deduct += min(excess * EXCESS_CHANGE_DEDUCT_PER_TIME, MAX_CHANGE_DEDUCT)
+
+    score -= min(energy_deduct, MAX_ENERGY_DEDUCT)
+
+    return max(0, min(100, round(score)))
+
+
+def _determine_user_level_v2(
+    over100a_cont, over100a_hours,
+    current_80a_count, soc_below_10_ratio, min_soc,
+    current_60a_count, energy_per_100km, soc_below_20_ratio,
+    score, riding_avg_current,
+    soc_data_valid, energy_data_valid
+):
+    """用户等级判定（严格按照旧脚本逻辑）"""
+    is_violent = False
+
+    if (over100a_cont >= 2) or (over100a_hours >= 0.1):
+        is_violent = True
+    elif soc_data_valid and (soc_below_10_ratio >= 0.20) and (min_soc <= 5):
+        is_violent = True
+
+    is_high_loss = False
+
+    if energy_data_valid and (energy_per_100km >= 17.0):
+        is_high_loss = True
+    elif (riding_avg_current >= 32.1) and soc_data_valid:
+        if soc_below_20_ratio >= 0.10:
+            is_high_loss = True
+    elif soc_data_valid and (soc_below_20_ratio >= 0.20):
+        is_high_loss = True
+    elif (score < 30) and energy_data_valid:
+        is_high_loss = True
+
+    if is_violent:
+        return "暴力用户（超量放电/电池滥用）"
+    elif is_high_loss:
+        return "高损耗用户"
+    else:
+        if score >= 75:
+            return "优质用户"
+        elif score >= 60:
+            return "良好用户"
+        elif score >= 45:
+            return "普通用户"
+        else:
+            return "高损耗用户"
+
+
+def _get_user_type(group):
+    """获取用户客户形态（按优先级）"""
+    priority = ["改装/超速车", "地摊/储能"]
+    for t in priority:
+        if t in list(group['客户形态']):
+            return t
+    
+    contract_type_duration = group.groupby('客户形态')['骑行总耗时(小时)'].sum()
+    total_duration = contract_type_duration.sum()
+    if total_duration > 0 and len(contract_type_duration) > 0:
+        return contract_type_duration.idxmax()
+    return "数据不足"
+
+
+def _get_user_level(levels):
+    """获取用户等级（按优先级）"""
+    priority = ["暴力用户（超量放电/电池滥用）", "高损耗用户", "普通用户", "良好用户", "优质用户", "无效"]
+    for l in priority:
+        if l in list(levels): return l
+    return "无效"
+
+
+def _get_level_desc(levels, descs):
+    """获取用户等级说明"""
+    priority = ["暴力用户（超量放电/电池滥用）", "高损耗用户", "普通用户", "良好用户", "优质用户", "无效"]
+    temp_df = pd.DataFrame({'level': levels, 'desc': descs})
+    for l in priority:
+        if l in temp_df['level'].values:
+            return temp_df[temp_df['level'] == l]['desc'].iloc[0]
+    return "数据不足"
+
+
+def _get_type_desc(types, descs):
+    """获取客户形态说明"""
+    priority = ["改装/超速车", "地摊/储能", "专送骑手", "众包骑手", "标准骑手", "普通骑手", "数据不足"]
+    temp_df = pd.DataFrame({'type': types, 'desc': descs})
+    for t in priority:
+        if t in temp_df['type'].values:
+            return temp_df[temp_df['type'] == t]['desc'].iloc[0]
+    return "数据不足"
+
+
+def _generate_level_desc(row):
+    """生成用户等级说明"""
+    current_level = row['用户等级']
+    if current_level == "暴力用户（超量放电/电池滥用）":
+        reasons = []
+        if row['超100A连续次数'] >= VIOLENT_CURRENT_TIMES:
+            reasons.append(f"超100A连续放电{row['超100A连续次数']}次，触发阈值")
+        if row['超100A累计时长_h'] >= OVER_CURRENT_MIN_HOUR:
+            reasons.append(f"超100A累计放电时长{row['超100A累计时长_h']}小时，触发阈值")
+        if row['电流>60A次数'] >= VIOLENT_CURRENT_TIMES:
+            reasons.append(f"电流超60A共{row['电流>60A次数']}次，峰值达{row['最大电流']}A")
+        if row['SOC数据有效'] and row['SOC低于10%时长占比'] >= 0.5 and row['最低SOC'] <= 5:
+            reasons.append(f"深度亏电严重（最低SOC{row['最低SOC']}%，SOC低于10%时长占比{row['SOC低于10%时长占比']*100:.0f}%）")
+        return " | ".join(reasons) if reasons else "存在严重损害电池的行为"
+    
+    elif current_level == "高损耗用户":
+        reasons = []
+        if row['电流>60A次数'] >= HIGH_LOSS_CURRENT_TIMES:
+            reasons.append(f"中高电流使用频繁（电流超60A共{row['电流>60A次数']}次）")
+        if row['能量数据有效'] and row['百公里电耗(kWh)'] >= EXTREME_ENERGY_THRESHOLD:
+            reasons.append(f"能耗极高（百公里电耗{row['百公里电耗(kWh)']}kWh）")
+        if row['SOC数据有效'] and row['SOC低于20%时长占比'] >= 0.5:
+            reasons.append(f"长期低电量运行（SOC低于20%时长占比{row['SOC低于20%时长占比']*100:.0f}%）")
+        if not reasons:
+            reasons.append(f"包月友好分较低（{row['包月友好评分']}分），电池损耗速度高于平均水平")
+        return " | ".join(reasons)
+    
+    elif current_level == "优质用户":
+        return f"电池使用习惯优秀（包月友好分{row['包月友好评分']}分），电流、速度、SOC均保持在健康区间"
+    elif current_level == "良好用户":
+        return f"电池使用习惯较好（包月友好分{row['包月友好评分']}分），整体负载可控"
+    elif current_level == "普通用户":
+        return f"电池使用行为一般（包月友好分{row['包月友好评分']}分），无明显过激使用行为"
+    else:
+        return "数据不足或无有效骑行数据，无法判定"
+
+
+def _generate_type_desc(row):
+    """生成客户形态说明"""
+    current_type = row['客户形态']
+    if current_type == "改装/超速车":
+        return f"行驶特征异常（最高速度{row['最大速度']}km/h，平均骑行电流{row['骑行放电平均电流']}A），远超普通两轮车水平，存在改装或超速嫌疑"
+    elif current_type == "地摊/储能":
+        return f"非移动用电特征明显（当日骑行{row['骑行总耗时(小时)']}小时，怠速放电{row['怠速放电时长(小时)']}小时），放电以静止状态为主，疑似地摊供电或储能场景"
+    elif current_type == "专送骑手":
+        return f"工作特征显著（当日骑行{row['骑行总耗时(小时)']:.1f}小时，高峰骑行占比{row['高峰骑行占比']*100:.0f}%），工作时长稳定且午晚高峰高度活跃，符合专送骑手画像"
+    elif current_type == "众包骑手":
+        return f"具有兼职骑手特征（当日骑行{row['骑行总耗时(小时)']:.1f}小时，高峰骑行占比{row['高峰骑行占比']*100:.0f}%），高峰时段有一定活跃度"
+    elif current_type == "标准骑手":
+        return f"骑行行为规律（当日行驶里程{row['行驶距离']}km，骑行时长{row['骑行总耗时(小时)']:.1f}小时），属于标准日常使用场景"
+    elif current_type == "普通骑手":
+        return f"有常规骑行行为（当日行驶里程{row['行驶距离']}km，骑行时长{row['骑行总耗时(小时)']:.1f}小时），不符合特定骑手标签特征"
+    else:
+        return "无有效骑行数据或数据量不足，无法判定具体使用场景"
+
+
+def append_to_snapshot(df_new: pd.DataFrame, path: str) -> None:
+    """追加写入快照文件，按 [用户id, 统计日期] 去重"""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    table_new = pa.Table.from_pandas(df_new)
+    if os.path.exists(path):
+        table_old = pq.read_table(path)
+        
+        # 对齐新旧表的列，删除旧表中多余列（如__index_level_0__）
+        old_cols = set(table_old.column_names)
+        new_cols = set(table_new.column_names)
+        
+        # 从旧表中移除新表不存在的列
+        cols_to_remove = old_cols - new_cols
+        if cols_to_remove:
+            table_old = table_old.drop([c for c in cols_to_remove])
+        
+        # 从新表中添加旧表有但新表没有的列（填充None）
+        cols_to_add = new_cols - old_cols
+        if cols_to_add:
+            for col in cols_to_add:
+                table_old = table_old.append_column(col, pa.array([None] * len(table_old)))
+        
+        # 修复类型不一致：将旧表中null类型的列转换为string
+        for col in table_old.column_names:
+            if pa.types.is_null(table_old.schema.field(col).type):
+                table_old = table_old.set_column(
+                    table_old.column_names.index(col),
+                    col,
+                    pa.array([None] * len(table_old), type=pa.string())
+                )
+        
+        df = pa.concat_tables([table_old, table_new]).to_pandas()
+        df = df.drop_duplicates(subset=['用户id', '统计日期'], keep='last')
+        table_new = pa.Table.from_pandas(df)
+    pq.write_table(table_new, path, compression='zstd')
+
+
+def process_snapshot_layer(target_date: Optional[str] = None, base_path: str = BASE_EXPORT_PATH) -> str:
+    """
+    L2 Snapshot Layer 主入口
+
+    Args:
+        target_date: 目标日期 YYYY-MM-DD，None 则处理所有日期
+        base_path: 基础导出路径
+
+    Returns:
+        str: 快照文件路径
+    """
+    print("\n" + "=" * 80)
+    print("L2 Snapshot Layer - 用户日级快照层")
+    print("=" * 80)
+
+    fact_dir = EXPORT_PATH_FACT_DAILY
+    output_path = EXPORT_PATH_SNAPSHOT
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    if not os.path.exists(fact_dir):
+        print("❌ Fact 数据目录不存在，请先运行 L1 Fact Layer")
+        return ""
+
+    fact_files = [f for f in os.listdir(fact_dir) if f.endswith('.parquet')]
+    if not fact_files:
+        print("❌ 未找到 Fact Parquet 文件")
+        return ""
+
+    all_user_rows = []
+
+    for fact_file in fact_files:
+        date_str = fact_file.replace('.parquet', '')
+        if target_date and date_str != target_date:
+            continue
+
+        fact_path = os.path.join(fact_dir, fact_file)
+        print(f"\n📊 处理日期: {date_str}")
+
+        try:
+            df_fact = pd.read_parquet(fact_path)
+        except Exception as e:
+            print(f"⚠️ 读取 Fact 数据失败 {fact_path}: {e}")
+            continue
+
+        if '用户id' not in df_fact.columns:
+            print("   ❌ 缺少用户id字段")
+            continue
+
+        df_fact = df_fact.copy()
+        df_fact['用户id'] = df_fact['用户id'].astype(str).fillna('未知用户')
+        
+        # 兼容两种字段名
+        current_col = '骑行放电平均电流' if '骑行放电平均电流' in df_fact.columns else '平均骑行电流'
+        df_fact['weighted_current'] = df_fact[current_col] * df_fact['骑行总耗时(小时)']
+
+        group_key = ['统计日期', '用户id']
+        g = df_fact.groupby(group_key)
+
+        df_agg = pd.DataFrame()
+        df_agg['关联合约数'] = g['合约id'].nunique()
+        
+        df_agg['当日总行驶距离_km'] = g['行驶距离'].sum()
+        df_agg['当日总骑行时长_h'] = g['骑行总耗时(小时)'].sum()
+        df_agg['当日总放电时长_h'] = g['总放电时长(小时)'].sum()
+        df_agg['当日总怠速放电时长_h'] = g['怠速放电时长(小时)'].sum()
+        df_agg['当日平均骑行放电比'] = g['骑行-放电时长比'].mean()
+        
+        df_agg['当日总用电量_kWh'] = g['总用电量(kWh)'].sum()
+        df_agg['当日总骑行次数'] = g['骑行次数'].sum()
+        df_agg['当日总换电次数'] = g['换电次数'].sum()
+        
+        df_agg['单合约日均行驶里程_km'] = df_agg['当日总行驶距离_km'].round(2)
+        df_agg['单合约日均骑行时长_h'] = df_agg['当日总骑行时长_h'].round(2)
+        df_agg['单合约日均放电时长_h'] = df_agg['当日总放电时长_h'].round(2)
+        df_agg['单合约日均怠速放电_h'] = df_agg['当日总怠速放电时长_h'].round(2)
+        df_agg['单合约日均用电量_kWh'] = df_agg['当日总用电量_kWh'].round(2)
+        
+        df_agg['午间高峰长时骑行总次数'] = g['午间高峰长时骑行次数'].sum()
+        df_agg['晚间高峰长时骑行总次数'] = g['晚间高峰长时骑行次数'].sum()
+        df_agg['平峰长时骑行总次数'] = g['平峰长时骑行次数'].sum()
+        df_agg['夜间长时骑行总次数'] = g['夜间长时骑行次数'].sum()
+        
+        df_agg['午间高峰总里程_km'] = g['午间高峰骑行里程'].sum()
+        df_agg['晚间高峰总里程_km'] = g['晚间高峰骑行里程'].sum()
+        df_agg['平峰总里程_km'] = g['平峰骑行里程'].sum()
+        df_agg['夜间总里程_km'] = g['夜间骑行里程'].sum()
+        
+        df_agg['总电流超60A次数'] = g['电流>60A次数'].sum()
+        df_agg['总电流超80A次数'] = g['电流>80A次数'].sum()
+        df_agg['总超100A连续次数'] = g['超100A连续次数'].sum()
+        df_agg['总超100A累计时长_h'] = g['超100A累计时长_h'].sum()
+        
+        df_agg['当日最高速度_kmh'] = g['最大速度'].max()
+        df_agg['当日最大电流_A'] = g['最大电流'].max()
+        df_agg['当日最高温度_℃'] = g['最大温度'].max()
+        df_agg['当日最低SOC'] = g['最低SOC'].min()
+        df_agg['最低包月友好分'] = g['包月友好评分'].min()
+        df_agg['最大单合约活动半径_km'] = g['R95核心活动半径'].max()
+        df_agg['当日是否出勤'] = g['当日是否出勤'].max()
+        
+        df_agg['平均包月友好分'] = g['包月友好评分'].mean().round(1)
+        df_agg['当日平均骑行SOC'] = g['平均骑行SOC'].mean().round(1)
+        df_agg['当日平均骑行速度_kmh'] = g['平均骑行速度'].mean().round(2)
+        df_agg['_weighted_current_sum'] = g['weighted_current'].sum()
+        df_agg['当日平均骑行电流_A'] = np.where(
+            df_agg['当日总骑行时长_h'] > 0,
+            (df_agg['_weighted_current_sum'] / df_agg['当日总骑行时长_h']).round(2),
+            0.0
+        )
+        df_agg['当日百公里电耗_kWh'] = g['百公里电耗(kWh)'].mean().round(2)
+
+        def _weighted_aggregations(x):
+            h = x['骑行总耗时(小时)']
+            total_h = h.sum()
+            return pd.Series({
+                '_weighted_peak_ratio': (x['高峰骑行占比'] * h).sum(),
+                '_weighted_soc20_ratio': (x['SOC低于20%时长占比'] * h).sum(),
+                '_weighted_soc10_ratio': (x['SOC低于10%时长占比'] * h).sum(),
+                '_total_riding_hour': total_h,
+            })
+        
+        df_weighted = g.apply(_weighted_aggregations)
+        df_agg = pd.concat([df_agg, df_weighted], axis=1)
+        
+        df_agg['高峰骑行占比'] = np.where(
+            df_agg['_total_riding_hour'] > 0, 
+            (df_agg['_weighted_peak_ratio'] / df_agg['_total_riding_hour']).round(2), 
+            0
+        )
+        df_agg['SOC低于20%时长占比_当日'] = np.where(
+            df_agg['_total_riding_hour'] > 0, 
+            (df_agg['_weighted_soc20_ratio'] / df_agg['_total_riding_hour']).round(2), 
+            0
+        )
+        df_agg['SOC低于10%时长占比_当日'] = np.where(
+            df_agg['_total_riding_hour'] > 0, 
+            (df_agg['_weighted_soc10_ratio'] / df_agg['_total_riding_hour']).round(2), 
+            0
+        )
+
+        df_custom = pd.DataFrame()
+        df_custom['核心活动省份'] = g['核心活动省份'].apply(lambda x: x.value_counts().index[0] if len(x.dropna())>0 else "")
+        df_custom['核心活动城市'] = g['核心活动城市'].apply(lambda x: x.value_counts().index[0] if len(x.dropna())>0 else "")
+        df_custom['核心活动区县'] = g['核心活动区县'].apply(lambda x: x.value_counts().index[0] if len(x.dropna())>0 else "")
+        df_custom['风险标签_电流异常'] = g['电流异常用户'].apply(lambda x: '是' if '是' in list(x) else '否')
+        df_custom['客户形态_综合'] = g.apply(_get_user_type)
+        df_custom['用户等级_综合'] = g['用户等级'].apply(_get_user_level)
+
+        if '用户等级说明' in df_fact.columns:
+            df_custom['用户等级_综合说明'] = g.apply(lambda x: _get_level_desc(x['用户等级'], x['用户等级说明']))
+        if '客户形态说明' in df_fact.columns:
+            df_custom['客户形态_综合说明'] = g.apply(lambda x: _get_type_desc(x['客户形态'], x['客户形态说明']))
+
+        df_user = pd.concat([df_agg, df_custom], axis=1).reset_index()
+        df_user = df_user.drop(columns=['_weighted_peak_ratio', '_total_riding_hour', '_weighted_soc20_ratio', '_weighted_soc10_ratio', '_weighted_current_sum'], errors='ignore')
+        
+        all_user_rows.append(df_user)
+
+    if not all_user_rows:
+        print("❌ 无有效用户快照数据")
+        return ""
+
+    df_snapshot = pd.concat(all_user_rows, ignore_index=True)
+
+    append_to_snapshot(df_snapshot, output_path)
+    print(f"✅ L2 保存: {output_path} ({len(df_snapshot)} 用户日记录)")
+
+    return output_path
+
+
+if __name__ == "__main__":
+    process_snapshot_layer(target_date=None)
