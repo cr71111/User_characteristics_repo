@@ -409,7 +409,17 @@ def calc_contract_metrics(df_sorted):
             '平均骑行SOC': 0.0, '最低SOC': 100.0, 'SOC低于20%时长占比': 0.0, 'SOC低于10%时长占比': 0.0,
             '午间高峰长时骑行次数': 0, '晚间高峰长时骑行次数': 0, '平峰长时骑行次数': 0, '夜间长时骑行次数': 0,
             '午间高峰骑行里程': 0.0, '晚间高峰骑行里程': 0.0, '平峰骑行里程': 0.0, '夜间骑行里程': 0.0,
-            '工作时长覆盖(小时)': 0.0, '有效GPS点数': n
+            '工作时长覆盖(小时)': 0.0, '有效GPS点数': n,
+            # 换电时段
+            '换电总次数': 0, '平峰换电次数': 0, '深夜换电次数': 0, '高峰换电次数': 0,
+            '平峰换电占比': 0.0, '深夜换电占比': 0.0, '偏好换电时段': '无换电',
+            # SOC 换电画像
+            '取电时平均SOC': np.nan, '还电时平均SOC': np.nan, '单次换电平均SOC消耗': np.nan,
+            # 速度分位
+            'P50骑行速度_kmh': 0.0, 'P90骑行速度_kmh': 0.0,
+            '夜间骑行均速_kmh': 0.0, '高速骑行点数(>40kmh)': 0,
+            # 骑行时刻
+            '最早骑行时刻_h': -1, '最晚骑行时刻_h': -1, '主要骑行时段': '无数据',
         }
 
         total_riding_hours = 0.0
@@ -540,7 +550,7 @@ def calc_contract_metrics(df_sorted):
 
             valid_trips = []
             noon_long_count = evening_long_count = offpeak_long_count = night_long_count = 0
-            group['小时'] = pd.to_datetime(group['统计日期时间'], errors='coerce', format='mixed').dt.hour.fillna(0).astype(int)
+            group['小时'] = (pd.to_datetime(group['时间戳'], unit='s', errors='coerce').dt.hour.fillna(0).astype(int))
             
             for trip_id, trip_group in group.groupby('行程ID', dropna=True):
                 trip_duration_min = (trip_group['时间戳'].max() - trip_group['时间戳'].min()) / 60
@@ -594,7 +604,7 @@ def calc_contract_metrics(df_sorted):
             res['当日是否出勤'] = is_work_day
 
             # -------------------------- 6. 速度指标计算 --------------------------
-            riding_speed_data = group.loc[group['骑行状态'] == 1, ['速度', '统计日期时间']].dropna(subset=['速度'])
+            riding_speed_data = group.loc[group['骑行状态'] == 1, ['速度', '时间戳']].dropna(subset=['速度'])
             max_speed = 0.0
             max_speed_time = pd.NA
             avg_riding_speed = 0.0
@@ -603,12 +613,35 @@ def calc_contract_metrics(df_sorted):
                 if len(riding_speed_data) > 0:
                     max_speed = riding_speed_data['速度'].max()
                     max_speed_idx = riding_speed_data['速度'].idxmax()
-                    max_speed_time = riding_speed_data.loc[max_speed_idx, '统计日期时间']
+                    max_speed_timestamp = riding_speed_data.loc[max_speed_idx, '时间戳']
+                    max_speed_time = pd.to_datetime(max_speed_timestamp, unit='s', errors='coerce')
             if total_riding_hours > 0.01:
                 avg_riding_speed = round(total_distance / total_riding_hours, 2)
             res['最大速度'] = round(max_speed, 2)
             res['最大速度时间'] = max_speed_time
             res['平均骑行速度'] = avg_riding_speed
+
+            # 速度分位数 & 夜间速度
+            speed_p50 = speed_p90 = night_avg_speed = 0.0
+            high_speed_count = 0
+
+            if len(riding_speed_data) > 0:
+                speeds = riding_speed_data['速度'].values
+                speed_p50 = round(np.percentile(speeds, 50), 2)
+                speed_p90 = round(np.percentile(speeds, 90), 2)
+                high_speed_count = int((speeds > 40).sum())
+
+                riding_speed_data['小时_速度'] = pd.to_datetime(
+                    riding_speed_data['时间戳'], unit='s', errors='coerce'
+                ).dt.hour.fillna(0).astype(int)
+                night_mask = riding_speed_data['小时_速度'].isin(NIGHT_HOURS)
+                night_speeds = riding_speed_data.loc[night_mask, '速度']
+                night_avg_speed = round(night_speeds.mean(), 2) if len(night_speeds) > 3 else 0.0
+
+            res['P50骑行速度_kmh'] = speed_p50
+            res['P90骑行速度_kmh'] = speed_p90
+            res['夜间骑行均速_kmh'] = night_avg_speed
+            res['高速骑行点数(>40kmh)'] = high_speed_count
 
             # -------------------------- 7. 放电时长计算 --------------------------
             current_col_for_discharge = '电流_放电统计用' if '电流_放电统计用' in group.columns else '电流'
@@ -640,7 +673,7 @@ def calc_contract_metrics(df_sorted):
 
             # -------------------------- 9. 电流指标计算 --------------------------
             current_col_for_ride = '电流_骑行判定用' if '电流_骑行判定用' in group.columns else '电流'
-            riding_current_data = group.loc[group['骑行状态'] == 1, ['时间戳', current_col_for_ride, '统计日期时间']].dropna(subset=[current_col_for_ride])
+            riding_current_data = group.loc[group['骑行状态'] == 1, ['时间戳', current_col_for_ride]].dropna(subset=[current_col_for_ride])
             riding_current_data = riding_current_data.rename(columns={current_col_for_ride: '电流'})
             
             riding_current_data = riding_current_data[(riding_current_data['电流'] >= MIN_VALID_CURRENT) & (riding_current_data['电流'] <= MAX_VALID_CURRENT)]
@@ -663,11 +696,12 @@ def calc_contract_metrics(df_sorted):
             if len(riding_current_data) > 0:
                 max_current = riding_current_data['电流'].max()
                 max_current_idx = riding_current_data['电流'].idxmax()
-                max_current_time = riding_current_data.loc[max_current_idx, '统计日期时间']
+                max_current_timestamp = riding_current_data.loc[max_current_idx, '时间戳']
+                max_current_time = pd.to_datetime(max_current_timestamp, unit='s', errors='coerce')
                 riding_avg_current = riding_current_data['电流'].mean()
                 current_std = riding_current_data['电流'].std() if len(riding_current_data) > 1 else 0.0
                 current_cv = current_std / riding_avg_current if riding_avg_current > 0.1 else 0.0
-                riding_current_data['小时'] = pd.to_datetime(riding_current_data['统计日期时间'], errors='coerce', format='mixed').dt.hour.fillna(0).astype(int)
+                riding_current_data['小时'] = pd.to_datetime(riding_current_data['时间戳'], unit='s', errors='coerce').dt.hour.fillna(0).astype(int)
                 riding_current_data['是否高峰'] = riding_current_data['小时'].isin(NOON_PEAK_HOURS + EVENING_PEAK_HOURS)
                 peak_data = riding_current_data[riding_current_data['是否高峰']]
                 if len(peak_data) > 1:
@@ -721,14 +755,15 @@ def calc_contract_metrics(df_sorted):
                 res['超100A累计时长_h'] = round((riding_current_data['电流≥100A'].sum() * COLLECTION_CYCLE_MIN) / 60, 2)
 
             # -------------------------- 10. 温度指标计算 --------------------------
-            temp_data = group[['温度', '统计日期时间']].dropna(subset=['温度'])
+            temp_data = group[['温度', '时间戳']].dropna(subset=['温度'])
             max_temp = 0.0
             max_temp_time = pd.NA
             avg_temp = 0.0
             if len(temp_data) > 0:
                 max_temp = temp_data['温度'].max()
                 max_temp_idx = temp_data['温度'].idxmax()
-                max_temp_time = temp_data.loc[max_temp_idx, '统计日期时间']
+                max_temp_timestamp = temp_data.loc[max_temp_idx, '时间戳']
+                max_temp_time = pd.to_datetime(max_temp_timestamp, unit='s', errors='coerce')
                 avg_temp = temp_data['温度'].mean()
             res['最大温度'] = round(max_temp, 2)
             res['最大温度时间'] = max_temp_time
@@ -749,7 +784,46 @@ def calc_contract_metrics(df_sorted):
                 battery_change_count = max(0, battery_change_count)
             res['换电次数'] = battery_change_count
 
-            if '电池度数' in group.columns and '电池id' in group.columns:
+            # 换电时段统计
+            OFFPEAK_SWAP_HOURS = list(range(6, 11)) + list(range(14, 17))
+            NIGHT_SWAP_HOURS   = list(range(20, 24)) + list(range(0, 6))
+
+            swap_hours = []
+            if '电池id' in group.columns:
+                swap_mask = group['电池切换标记'] == 1
+                if swap_mask.sum() > 0:
+                    swap_times = pd.to_datetime(
+                        group.loc[swap_mask, '时间戳'], unit='s', errors='coerce'
+                    )
+                    swap_hours = swap_times.dt.hour.dropna().tolist()
+
+            total_swaps = len(swap_hours)
+            offpeak_swaps = sum(1 for h in swap_hours if h in OFFPEAK_SWAP_HOURS)
+            night_swaps   = sum(1 for h in swap_hours if h in NIGHT_SWAP_HOURS)
+            peak_swaps    = total_swaps - offpeak_swaps - night_swaps
+
+            res['换电总次数'] = total_swaps
+            res['平峰换电次数'] = offpeak_swaps
+            res['深夜换电次数'] = night_swaps
+            res['高峰换电次数'] = peak_swaps
+            res['平峰换电占比'] = round(offpeak_swaps / total_swaps, 3) if total_swaps > 0 else 0.0
+            res['深夜换电占比'] = round(night_swaps / total_swaps, 3) if total_swaps > 0 else 0.0
+
+            if swap_hours:
+                from collections import Counter
+                hour_dist = Counter(swap_hours)
+                peak_hour = hour_dist.most_common(1)[0][0]
+                if peak_hour in OFFPEAK_SWAP_HOURS:
+                    res['偏好换电时段'] = '平峰'
+                elif peak_hour in NIGHT_SWAP_HOURS:
+                    res['偏好换电时段'] = '深夜'
+                else:
+                    res['偏好换电时段'] = '高峰'
+
+            # 取电/还电 SOC 记录
+            start_socs, end_socs = [], []
+
+            if '电池度数' in group.columns and '电池id' in group.columns and '电池SOC' in group.columns:
                 for battery_segment, batt_group in group.groupby(group['电池切换标记'].cumsum()):
                     batt_group = batt_group.dropna(subset=['电池度数'])
                     if len(batt_group) < 2: continue
@@ -757,6 +831,28 @@ def calc_contract_metrics(df_sorted):
                     end_energy = batt_group['电池度数'].iloc[-1]
                     if start_energy > end_energy:
                         total_energy_used += (start_energy - end_energy)
+
+                    soc_seg = batt_group['电池SOC'].dropna()
+                    if len(soc_seg) >= 2:
+                        start_socs.append(soc_seg.iloc[0])
+                        end_socs.append(soc_seg.iloc[-1])
+
+            else:
+                if '电池度数' in group.columns and '电池id' in group.columns:
+                    for battery_segment, batt_group in group.groupby(group['电池切换标记'].cumsum()):
+                        batt_group = batt_group.dropna(subset=['电池度数'])
+                        if len(batt_group) < 2: continue
+                        start_energy = batt_group['电池度数'].iloc[0]
+                        end_energy = batt_group['电池度数'].iloc[-1]
+                        if start_energy > end_energy:
+                            total_energy_used += (start_energy - end_energy)
+
+            res['取电时平均SOC'] = round(np.mean(start_socs), 1) if start_socs else np.nan
+            res['还电时平均SOC'] = round(np.mean(end_socs), 1) if end_socs else np.nan
+            res['单次换电平均SOC消耗'] = round(
+                np.mean(start_socs) - np.mean(end_socs), 1
+            ) if start_socs and end_socs else np.nan
+
             res['总用电量(kWh)'] = round(total_energy_used, 2)
 
             if total_distance > 1.0:
@@ -780,6 +876,24 @@ def calc_contract_metrics(df_sorted):
             if len(riding_time_data) > 0:
                 work_span_hours = (riding_time_data.max() - riding_time_data.min()) / 3600
                 res['工作时长覆盖(小时)'] = round(work_span_hours, 1)
+
+                # 骑行时刻分布
+                riding_hours = pd.to_datetime(
+                    group.loc[group['骑行状态'] == 1, '时间戳'], unit='s', errors='coerce'
+                ).dt.hour.dropna()
+                if len(riding_hours) > 0:
+                    res['最早骑行时刻_h'] = int(riding_hours.min())
+                    res['最晚骑行时刻_h'] = int(riding_hours.max())
+
+                    main_hour = riding_hours.mode().iloc[0] if len(riding_hours.mode()) > 0 else -1
+                    if main_hour in NOON_PEAK_HOURS:
+                        res['主要骑行时段'] = '午间高峰'
+                    elif main_hour in EVENING_PEAK_HOURS:
+                        res['主要骑行时段'] = '晚间高峰'
+                    elif main_hour in NIGHT_HOURS:
+                        res['主要骑行时段'] = '夜间'
+                    else:
+                        res['主要骑行时段'] = '平峰'
 
             # -------------------------- 13.5. 数据有效性标记 --------------------------
             energy_data_valid = (energy_per_100km > 0)

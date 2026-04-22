@@ -181,6 +181,14 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
         ('当日平均骑行速度_kmh', '近7d平均骑行速度_kmh'),
         ('当日平均骑行电流_A', '近7d平均骑行电流_A'),
         ('当日百公里电耗_kWh', '近7d百公里电耗_kWh'),
+        ('当日P50骑行速度_kmh', '近7d_P50骑行速度_kmh'),
+        ('当日P90骑行速度_kmh', '近7d_P90骑行速度_kmh'),
+        ('当日夜间骑行均速_kmh', '近7d夜间骑行均速_kmh'),
+        ('取电时平均SOC_当日', '近7d取电时平均SOC'),
+        ('还电时平均SOC_当日', '近7d还电时平均SOC'),
+        ('单次换电平均SOC消耗_当日', '近7d单次换电SOC消耗'),
+        ('平峰换电占比_当日', '近7d平峰换电占比'),
+        ('深夜换电占比_当日', '近7d深夜换电占比'),
     ]
     for raw_col, roll_col in weighted_cols:
         if raw_col in group.columns:
@@ -209,7 +217,11 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
         ('当日最高速度_kmh', '近7d最高速度_kmh'),
         ('当日最大电流_A', '近7d最大电流_A'),
         ('当日最高温度_℃', '近7d最高温度_℃'),
-        ('最大单合约活动半径_km', '近7d最大活动半径_km')
+        ('最大单合约活动半径_km', '近7d最大活动半径_km'),
+        ('R90活动半径_km', '近7d_R90活动半径_km'),
+        ('最大凸包覆盖面积_km2', '近7d凸包覆盖面积_km2'),
+        ('最大单次出行距离_km', '近7d最大单次出行距离_km'),
+        ('最晚骑行时刻_h', '近7d最晚骑行时刻_h'),
     ]
     for raw_col, roll_col in max_cols:
         if raw_col in group.columns:
@@ -219,7 +231,8 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
             res[roll_col] = 0
 
     min_cols = [
-        ('当日最低SOC', '近7d最低SOC')
+        ('当日最低SOC', '近7d最低SOC'),
+        ('最早骑行时刻_h', '近7d最早骑行时刻_h'),
     ]
     for raw_col, roll_col in min_cols:
         if raw_col in group.columns:
@@ -242,7 +255,12 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
         ('午间高峰总里程_km', '近7d午间高峰总里程_km', '近7d日均午间高峰总里程_km'),
         ('晚间高峰总里程_km', '近7d晚间高峰总里程_km', '近7d日均晚间高峰总里程_km'),
         ('平峰总里程_km', '近7d平峰总里程_km', '近7d日均平峰总里程_km'),
-        ('夜间总里程_km', '近7d夜间总里程_km', '近7d日均夜间总里程_km')
+        ('夜间总里程_km', '近7d夜间总里程_km', '近7d日均夜间总里程_km'),
+        ('当日平峰换电次数', '近7d平峰换电总次数', '近7d日均平峰换电次数'),
+        ('当日深夜换电次数', '近7d深夜换电总次数', '近7d日均深夜换电次数'),
+        ('当日高峰换电次数', '近7d高峰换电总次数', '近7d日均高峰换电次数'),
+        ('当日高速骑行点数', '近7d高速骑行总点数', '近7d日均高速骑行点数'),
+        ('当日总行驶距离_km', '近7d总行驶距离_km', '近7d日均行驶距离_km'),
     ]
 
     for raw_col, cum_col, avg_col in cumulative_and_avg_cols:
@@ -357,6 +375,155 @@ def determine_lifecycle_state(row: dict, current_date: pd.Timestamp) -> str:
         return '轻度活跃'
 
 
+def _add_derived_portrait_metrics(df: pd.DataFrame) -> pd.DataFrame:
+
+    r90 = df.get('近7d_R90活动半径_km', pd.Series(0, index=df.index)).fillna(0)
+    r95 = df.get('近7d最大活动半径_km', pd.Series(1, index=df.index)).replace(0, 1)
+    df['近7d活动集中度'] = (r90 / r95).clip(0, 1).round(3)
+
+    offpeak_ratio = df.get('近7d平峰换电占比', pd.Series(0, index=df.index)).fillna(0)
+    night_ratio   = df.get('近7d深夜换电占比', pd.Series(0, index=df.index)).fillna(0)
+
+    swap_friendly = (offpeak_ratio * 0.6 + night_ratio * 0.4) * 20
+    df['近7d换电友好分'] = swap_friendly.clip(0, 20).round(1)
+
+    def _swap_period_label(row):
+        offpeak = row.get('近7d平峰换电占比', 0) or 0
+        night   = row.get('近7d深夜换电占比', 0) or 0
+        peak    = 1 - offpeak - night
+        if offpeak >= 0.5:  return '偏好平峰换电'
+        if night   >= 0.4:  return '偏好深夜换电'
+        if offpeak + night >= 0.5: return '平峰+深夜混合'
+        if peak >= 0.6:     return '高峰换电为主'
+        return '换电时段分散'
+    df['换电时段偏好_7d'] = df.apply(_swap_period_label, axis=1)
+
+    attendance_rate = df.get('近7d出勤率', pd.Series(0, index=df.index)).fillna(0)
+    df['近7d骑行规律性评分'] = (attendance_rate * 10).clip(0, 10).round(1)
+
+    soc_consume = df.get('近7d单次换电SOC消耗', pd.Series(np.nan, index=df.index))
+    df['近7d单次换电SOC消耗'] = soc_consume.fillna(0).round(1)
+
+    night_speed = df.get('近7d夜间骑行均速_kmh', pd.Series(0, index=df.index)).fillna(0)
+    df['夜间高速风险'] = np.select(
+        [night_speed >= 45, night_speed >= 35],
+        ['高', '中'],
+        default='低'
+    )
+
+    return df
+
+
+def _generate_full_portrait(df: pd.DataFrame) -> pd.DataFrame:
+
+    portraits = []
+    for _, row in df.iterrows():
+        parts = []
+
+        level     = row.get('用户等级_动态', '未知')
+        ctype     = row.get('客户形态_综合_7d', '未知')
+        lifecycle = row.get('用户生命周期状态_7d', '未知')
+        parts.append(f"【类型】{ctype} | {level} | 生命周期:{lifecycle}")
+
+        earliest = row.get('近7d最早骑行时刻_h', -1)
+        latest   = row.get('近7d最晚骑行时刻_h', -1)
+        pattern  = row.get('近7d工作特点', '未知')
+        attend   = row.get('近7d出勤率', 0)
+        ride_h   = row.get('近7d单合约日均骑行时长_h', 0)
+        if earliest >= 0 and latest >= 0:
+            parts.append(
+                f"【骑行时间】惯用时段:{pattern} | "
+                f"首次上路:{earliest:02d}:xx / 最晚收车:{latest:02d}:xx | "
+                f"出勤率:{attend:.0%} | 日均骑行:{ride_h:.1f}h"
+            )
+
+        swap_pref   = row.get('换电时段偏好_7d', '未知')
+        swap_total  = row.get('近7d总换电次数', 0)
+        swap_friend = row.get('近7d换电友好分', 0)
+        offpeak_r   = row.get('近7d平峰换电占比', 0)
+        night_r     = row.get('近7d深夜换电占比', 0)
+        if swap_total > 0:
+            parts.append(
+                f"【换电习惯】{swap_pref} | 7天共换电{swap_total:.0f}次 | "
+                f"平峰占比:{offpeak_r:.0%} / 深夜占比:{night_r:.0%} | "
+                f"换电友好分:{swap_friend:.1f}/20"
+            )
+        else:
+            parts.append("【换电习惯】近7天无换电记录")
+
+        province = row.get('核心活动省份', '')
+        city     = row.get('核心活动城市', '')
+        district = row.get('核心活动区县', '')
+        r90      = row.get('近7d_R90活动半径_km', 0)
+        r95      = row.get('近7d最大活动半径_km', 0)
+        hull     = row.get('近7d凸包覆盖面积_km2', 0)
+        max_dist = row.get('近7d最大单次出行距离_km', 0)
+        conc     = row.get('近7d活动集中度', 0)
+        location = ' '.join(filter(None, [province, city, district]))
+        conc_label = '高度集中' if conc > 0.8 else ('较集中' if conc > 0.6 else '活动范围广')
+        parts.append(
+            f"【活动区域】{location} | "
+            f"日常半径(R90):{r90:.1f}km / 极限半径(R95):{r95:.1f}km | "
+            f"覆盖面积:{hull:.1f}km² | 最远单次出行:{max_dist:.1f}km | "
+            f"集中度:{conc_label}"
+        )
+
+        total_km  = row.get('近7d总行驶距离_km', 0)
+        daily_km  = row.get('近7d单合约日均行驶里程_km', 0)
+        energy100 = row.get('近7d百公里电耗_kWh', 0)
+        monthly_e = row.get('单合约月度用电度数预估_kWh', 0)
+        parts.append(
+            f"【骑行距离】7天:{total_km:.0f}km / 日均:{daily_km:.1f}km | "
+            f"百公里电耗:{energy100:.1f}kWh | 月预估用电:{monthly_e:.0f}度"
+        )
+
+        max_spd  = row.get('近7d最高速度_kmh', 0)
+        p50_spd  = row.get('近7d_P50骑行速度_kmh', 0)
+        p90_spd  = row.get('近7d_P90骑行速度_kmh', 0)
+        night_spd = row.get('近7d夜间骑行均速_kmh', 0)
+        night_risk = row.get('夜间高速风险', '低')
+        spd_line = (
+            f"【速度画像】P50:{p50_spd:.0f}km/h / P90:{p90_spd:.0f}km/h / 峰值:{max_spd:.0f}km/h"
+        )
+        if night_spd > 0:
+            spd_line += f" | 夜间均速:{night_spd:.0f}km/h（风险:{night_risk}）"
+        parts.append(spd_line)
+
+        avg_cur = row.get('近7d平均骑行电流_A', 0)
+        max_cur = row.get('近7d最大电流_A', 0)
+        over80  = row.get('近7d电流超80A总次数', 0)
+        over100 = row.get('近7d超100A连续总次数', 0)
+        cur_line = f"【电流画像】均值:{avg_cur:.1f}A / 峰值:{max_cur:.0f}A"
+        if over80 > 0:
+            cur_line += f" | 超80A:{over80:.0f}次"
+        if over100 > 0:
+            cur_line += f" | 超100A连续:{over100:.0f}次"
+        parts.append(cur_line)
+
+        min_soc    = row.get('近7d最低SOC', 100)
+        avg_soc    = row.get('近7d平均骑行SOC', 0)
+        soc20      = row.get('近7d_SOC低于20%时长占比', 0)
+        get_soc    = row.get('近7d取电时平均SOC', np.nan)
+        ret_soc    = row.get('近7d还电时平均SOC', np.nan)
+        soc_consume = row.get('近7d单次换电SOC消耗', 0)
+        bat_line = f"【电池状况】最低SOC:{min_soc:.0f}% / 均值SOC:{avg_soc:.0f}%"
+        if soc20 > 0:
+            bat_line += f" | 低电量时长占比:{soc20:.1%}"
+        if not np.isnan(get_soc) and not np.isnan(ret_soc):
+            bat_line += f" | 取电SOC:{get_soc:.0f}% → 还电SOC:{ret_soc:.0f}%（消耗{soc_consume:.0f}%）"
+        parts.append(bat_line)
+
+        risk   = row.get('风险标签', '正常')
+        strat  = row.get('策略建议', '维持服务')
+        score  = row.get('重评分数', 0)
+        parts.append(f"【风险&策略】{risk} | {strat} | 综合评分:{score:.1f}/100")
+
+        portraits.append('\n'.join(parts))
+
+    df['用户完全体画像'] = portraits
+    return df
+
+
 def process_lifecycle_layer(target_date: Optional[str] = None, base_path: str = BASE_EXPORT_PATH) -> str:
     print("\n" + "=" * 80)
     print("L3 Lifecycle Layer - 用户生命周期层")
@@ -396,11 +563,17 @@ def process_lifecycle_layer(target_date: Optional[str] = None, base_path: str = 
     df_scored = score_and_classify(df_rolling, thresholds, baseline)
     print(f"   评分分类完成")
 
+    print("\n[4.5/6] 计算完全体画像衍生指标...")
+    df_scored = _add_derived_portrait_metrics(df_scored)
+
     print("\n[5/6] 生命周期状态判定...")
     current_date = pd.Timestamp.now()
     df_scored['用户生命周期状态_7d'] = df_scored.apply(
         lambda row: determine_lifecycle_state(row, current_date), axis=1
     )
+
+    print("\n[5.5/6] 生成完全体画像文本...")
+    df_scored = _generate_full_portrait(df_scored)
 
     print("\n[6/6] 保存结果...")
     df_scored.to_parquet(output_path, engine='pyarrow', compression='zstd')

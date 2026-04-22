@@ -455,6 +455,9 @@ def process_snapshot_layer(target_date: Optional[str] = None, base_path: str = B
         df_agg['当日最低SOC'] = g['最低SOC'].min()
         df_agg['最低包月友好分'] = g['包月友好评分'].min()
         df_agg['最大单合约活动半径_km'] = g['R95核心活动半径'].max()
+        df_agg['R90活动半径_km'] = g['R90日常活动半径'].max()
+        df_agg['最大凸包覆盖面积_km2'] = g['凸包覆盖面积'].max()
+        df_agg['最大单次出行距离_km'] = g['最大出行距离'].max()
         df_agg['当日是否出勤'] = g['当日是否出勤'].max()
         
         df_agg['平均包月友好分'] = g['包月友好评分'].mean().round(1)
@@ -492,10 +495,34 @@ def process_snapshot_layer(target_date: Optional[str] = None, base_path: str = B
             0
         )
         df_agg['SOC低于10%时长占比_当日'] = np.where(
-            df_agg['_total_riding_hour'] > 0, 
-            (df_agg['_weighted_soc10_ratio'] / df_agg['_total_riding_hour']).round(2), 
+            df_agg['_total_riding_hour'] > 0,
+            (df_agg['_weighted_soc10_ratio'] / df_agg['_total_riding_hour']).round(2),
             0
         )
+
+        # 换电时段聚合
+        df_agg['当日平峰换电次数'] = g['平峰换电次数'].sum()
+        df_agg['当日深夜换电次数'] = g['深夜换电次数'].sum()
+        df_agg['当日高峰换电次数'] = g['高峰换电次数'].sum()
+
+        total_swap = g['换电总次数'].sum().replace(0, np.nan)
+        df_agg['平峰换电占比_当日'] = (g['平峰换电次数'].sum() / total_swap).fillna(0).round(3)
+        df_agg['深夜换电占比_当日'] = (g['深夜换电次数'].sum() / total_swap).fillna(0).round(3)
+
+        # SOC 换电画像聚合
+        df_agg['取电时平均SOC_当日'] = g['取电时平均SOC'].mean().round(1)
+        df_agg['还电时平均SOC_当日'] = g['还电时平均SOC'].mean().round(1)
+        df_agg['单次换电平均SOC消耗_当日'] = g['单次换电平均SOC消耗'].mean().round(1)
+
+        # 速度分位聚合
+        df_agg['当日P50骑行速度_kmh'] = g['P50骑行速度_kmh'].mean().round(2)
+        df_agg['当日P90骑行速度_kmh'] = g['P90骑行速度_kmh'].max().round(2)
+        df_agg['当日夜间骑行均速_kmh'] = g['夜间骑行均速_kmh'].max().round(2)
+        df_agg['当日高速骑行点数'] = g['高速骑行点数(>40kmh)'].sum()
+
+        # 骑行时刻聚合
+        df_agg['最早骑行时刻_h'] = g['最早骑行时刻_h'].min()
+        df_agg['最晚骑行时刻_h'] = g['最晚骑行时刻_h'].max()
 
         df_custom = pd.DataFrame()
         df_custom['核心活动省份'] = g['核心活动省份'].apply(lambda x: x.value_counts().index[0] if len(x.dropna())>0 else "")
@@ -503,7 +530,22 @@ def process_snapshot_layer(target_date: Optional[str] = None, base_path: str = B
         df_custom['核心活动区县'] = g['核心活动区县'].apply(lambda x: x.value_counts().index[0] if len(x.dropna())>0 else "")
         df_custom['风险标签_电流异常'] = g['电流异常用户'].apply(lambda x: '是' if '是' in list(x) else '否')
         df_custom['客户形态_综合'] = g.apply(_get_user_type)
-        df_custom['用户等级_综合'] = g['用户等级'].apply(_get_user_level)
+        df_custom['用户等级_综合'] = g.apply(_get_user_level)
+
+        def _dominant_swap_period(series):
+            counts = series.value_counts()
+            for period in ['平峰', '深夜', '高峰', '无换电']:
+                if period in counts.index:
+                    return period
+            return '无换电'
+
+        df_custom['偏好换电时段_综合'] = g['偏好换电时段'].apply(_dominant_swap_period)
+
+        def _dominant_period(series):
+            counts = series[series != '无数据'].value_counts()
+            return counts.index[0] if len(counts) > 0 else '无数据'
+
+        df_custom['主要骑行时段_综合'] = g['主要骑行时段'].apply(_dominant_period)
 
         if '用户等级说明' in df_fact.columns:
             df_custom['用户等级_综合说明'] = g.apply(lambda x: _get_level_desc(x['用户等级'], x['用户等级说明']))

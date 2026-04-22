@@ -52,6 +52,30 @@ MONTHLY_ENERGY_LOSS_THRESHOLD = 150.0  # 月用电盈亏线（度）
 MONTHLY_ENERGY_VIOLENT_THRESHOLD = 250.0  # 暴力用户用电阈值（度）
 NEW_USER_PROTECTION_DAYS = 3  # 新兵保护期天数
 
+# 温度阈值（与 fact_layer 对齐）
+TEMP_HIGH_THRESHOLD = 55.0
+TEMP_EXTREME_THRESHOLD = 70.0
+
+# 速度阈值
+SPEED_HIGH_THRESHOLD = 50.0
+SPEED_EXTREME_THRESHOLD = 60.0
+SPEED_VIOLENT_THRESHOLD = 80.0
+
+# SOC 黄金区间
+SOC_OPTIMAL_LOWER = 30
+SOC_OPTIMAL_UPPER = 80
+SOC_BONUS_SCORE = 3.0
+
+# 换电阈值
+NORMAL_DAILY_SWAPS = 3
+HIGH_DAILY_SWAPS = 5
+
+# 60A 电流告警次数门槛
+OVER60A_WARNING_COUNT = 10
+
+# 超100A 累计时长门槛（7天）
+OVER100A_HOURS_THRESHOLD_7D = 0.5
+
 
 def score_and_classify(
     df: pd.DataFrame,
@@ -76,35 +100,47 @@ def score_and_classify(
     max_cur = df['近7d最大电流_A'].fillna(0).values
     avg_cur = df['近7d平均骑行电流_A'].fillna(0).values
     over100 = df['近7d超100A连续总次数'].fillna(0).values
+    over100_hours = df['近7d超100A累计时长_h'].fillna(0).values
     over80 = df['近7d电流超80A总次数'].fillna(0).values
+    over60 = df['近7d电流超60A总次数'].fillna(0).values
     min_soc = df['近7d最低SOC'].fillna(100).values
     soc_low_ratio = df['近7d_SOC低于20%时长占比'].fillna(0).values
+    soc_below_10_ratio = df['近7d_SOC低于10%时长占比'].fillna(0).values
     monthly_energy = df['单合约月度用电度数预估_kWh'].fillna(0).values
+    max_temp = df['近7d最高温度_℃'].fillna(0).values
+    max_speed = df['近7d最高速度_kmh'].fillna(0).values
     
-    cond_violent = over100 >= 2
+    cond_violent = (over100 >= 2) | (over100_hours >= OVER100A_HOURS_THRESHOLD_7D)
     cond_extreme = (max_cur > max_cur_P99) & ~cond_violent
     cond_protect = (max_cur > PROTECTION_BOARD_MAX) & ~cond_violent & ~cond_extreme
     cond_over80 = (over80 > 0) & ~cond_violent & ~cond_extreme & ~cond_protect
-    cond_high_avg = (avg_cur > avg_cur_P95) & ~cond_violent & ~cond_extreme & ~cond_protect & ~cond_over80
+    cond_over60 = (over60 > OVER60A_WARNING_COUNT) & ~cond_violent & ~cond_extreme & ~cond_protect & ~cond_over80
+    cond_high_avg = (avg_cur > avg_cur_P95) & ~cond_violent & ~cond_extreme & ~cond_protect & ~cond_over80 & ~cond_over60
     
     risk_tags = np.select(
-        [cond_violent, cond_extreme, cond_protect, cond_over80, cond_high_avg],
-        ['暴力放电', '极端电流', '超保护板电流', '频繁超80A', '持续高耗流'],
+        [cond_violent, cond_extreme, cond_protect, cond_over80, cond_over60, cond_high_avg],
+        ['暴力放电', '极端电流', '超保护板电流', '频繁超80A', '中高电流频繁', '持续高耗流'],
         default=''
     )
     
     soc_risk = np.select(
-        [min_soc < 10, soc_low_ratio > 0],
-        ['深度亏电', '低SOC告警'],
+        [soc_below_10_ratio > 0.05, min_soc < 10, soc_below_10_ratio > 0, soc_low_ratio > 0],
+        ['持续深度亏电', '深度亏电', '深度亏电', '低SOC告警'],
         default=''
     )
     
     energy_risk = np.where(monthly_energy > MONTHLY_ENERGY_LOSS_THRESHOLD, 
                           '月用电超标(' + (monthly_energy).astype(int).astype(str) + '度)', '')
     
+    temp_risk = np.select(
+        [max_temp >= TEMP_EXTREME_THRESHOLD, max_temp >= TEMP_HIGH_THRESHOLD],
+        ['电池高温告警(>70°C)', '电池温度偏高(>55°C)'],
+        default=''
+    )
+    
     df['风险标签'] = pd.Series([
-        ' / '.join(filter(None, [r, s, e])) if any([r, s, e]) else '正常'
-        for r, s, e in zip(risk_tags, soc_risk, energy_risk)
+        ' / '.join(filter(None, [r, s, e, t])) if any([r, s, e, t]) else '正常'
+        for r, s, e, t in zip(risk_tags, soc_risk, energy_risk, temp_risk)
     ], index=df.index)
     
     # ── A2. 新增：识别"非移动用电"（疑似静态储能）────────────────────────
@@ -134,12 +170,17 @@ def score_and_classify(
     over100 = df['近7d超100A连续总次数'].fillna(0).values
     soc_low = df['近7d_SOC低于20%时长占比'].fillna(0).values
     monthly = df['近7d平均包月友好分'].fillna(0).values
+    max_temp_score = df['近7d最高温度_℃'].fillna(0).values
+    max_speed_score = df['近7d最高速度_kmh'].fillna(0).values
+    total_swaps = df['近7d总换电次数'].fillna(0).values
+    avg_soc = df['近7d平均骑行SOC'].fillna(0).values
     
     ride_hours = df['近7d单合约日均骑行时长_h'].fillna(0).values
     idle_hours = df['近7d单合约日均怠速放电_h'].fillna(0).values
     discharge_hours = df['近7d单合约日均放电时长_h'].fillna(0).values
     monthly_energy_val = df['单合约月度用电度数预估_kWh'].fillna(0).values
     customer_type = df.get('客户形态_综合_7d', pd.Series('未知', index=df.index)).fillna('未知').values
+    work_pattern = df.get('近7d工作特点', pd.Series('', index=df.index)).fillna('').values
 
     # ── B0. 沉默用户判定 ─────────────────────────────────────────────────
     is_silent = (avg_cur == 0) & (max_cur == 0) & (monthly_energy_val == 0) & (ride_hours == 0)
@@ -204,6 +245,41 @@ def score_and_classify(
     idle_penalty = np.where(idle_hours > 5, -20.0, np.where(idle_hours > 3, -10.0, 0.0))
     total = total + idle_penalty
     
+    # 温度扣分（与日级 _calc_monthly_score_v2 保持一致）
+    temp_penalty = np.select(
+        [max_temp_score >= TEMP_EXTREME_THRESHOLD, max_temp_score >= TEMP_HIGH_THRESHOLD],
+        [-8.0, -4.0],
+        default=0.0
+    )
+    total = total + temp_penalty
+    
+    # 速度扣分（与日级逻辑对齐）
+    speed_penalty = np.select(
+        [max_speed_score >= SPEED_VIOLENT_THRESHOLD, max_speed_score >= SPEED_EXTREME_THRESHOLD, max_speed_score >= SPEED_HIGH_THRESHOLD],
+        [-10.0, -6.0, -3.0],
+        default=0.0
+    )
+    total = total + speed_penalty
+    
+    # 换电次数扣分（参考日级逻辑：超3次/天开始扣分）
+    daily_avg_swaps = total_swaps / 7.0
+    swap_penalty = np.where(
+        daily_avg_swaps > HIGH_DAILY_SWAPS, -12.0,
+        np.where(daily_avg_swaps > NORMAL_DAILY_SWAPS, -6.0,
+        np.where(daily_avg_swaps > 2, -3.0, 0.0))
+    )
+    total = total + swap_penalty
+    
+    # SOC 黄金区间奖励（优质 SOC 管理用户正向激励）
+    soc_bonus = np.where(
+        (avg_soc >= SOC_OPTIMAL_LOWER) & 
+        (avg_soc <= SOC_OPTIMAL_UPPER) & 
+        (soc_low == 0),
+        SOC_BONUS_SCORE,
+        0.0
+    )
+    total = total + soc_bonus
+    
     total = np.where(over100 >= 2, total * 0.3, total)
     total = np.where(over100 == 1, total * 0.7, total)
     
@@ -227,7 +303,7 @@ def score_and_classify(
     s = df['重评分数'].values
     risk = df['风险标签'].fillna('正常').values
     
-    is_violent = (over100 >= 2) | (max_cur > max_cur_P99) | (monthly_energy_val > MONTHLY_ENERGY_VIOLENT_THRESHOLD)
+    is_violent = (over100 >= 2) | (over100_hours >= OVER100A_HOURS_THRESHOLD_7D) | (max_cur > max_cur_P99) | (monthly_energy_val > MONTHLY_ENERGY_VIOLENT_THRESHOLD)
     
     has_violent_risk = np.array(['暴力放电' in r or '极端电流' in r for r in risk])
     has_high_risk = np.array(['超保护板电流' in r or '频繁超80A' in r for r in risk])
@@ -266,11 +342,36 @@ def score_and_classify(
 
     df['用户等级_动态'] = result_level
 
-    # ── D. 策略建议生成（向量化优化）────────────────────────────────────
-    strat = {'优质用户':'留存激励','良好用户':'维持服务',
-             '普通用户':'引导升级','高损耗用户':'限制预警',
-             '暴力':'清退处理','观察期':'新手引导','沉默用户':'激活唤醒'}
-    df['策略建议'] = df['用户等级_动态'].map(strat).fillna('维持服务')
+    # ── D. 策略建议生成（向量化优化 + 差异化）────────────────────────────
+    def _get_strategy(level, customer_type, work_pattern):
+        """根据用户等级 + 客户形态 + 工作特点生成差异化策略"""
+        base_strategy = {
+            '优质用户':'留存激励','良好用户':'维持服务',
+            '普通用户':'引导升级','高损耗用户':'限制预警',
+            '暴力':'清退处理','观察期':'新手引导','沉默用户':'激活唤醒'
+        }.get(level, '维持服务')
+        
+        if customer_type == '专送骑手' and level in ('普通用户', '良好用户'):
+            return '专送骑手关怀'
+        if customer_type == '地摊/储能':
+            return '非正常用电核查'
+        if customer_type == '改装/超速车':
+            return '风险用户核查'
+        if customer_type == '众包骑手' and level == '普通用户':
+            return '众包骑手引导'
+        if work_pattern in ('习惯晚上',) and level in ('高损耗用户',):
+            return '夜间高损耗预警'
+        
+        return base_strategy
+    
+    df['策略建议'] = [
+        _get_strategy(lv, ct, wp)
+        for lv, ct, wp in zip(
+            df['用户等级_动态'].values,
+            df.get('客户形态_综合_7d', pd.Series('未知', index=df.index)).fillna('未知').values,
+            df.get('近7d工作特点', pd.Series('', index=df.index)).fillna('').values
+        )
+    ]
 
     # ── E. 等级说明生成（向量化优化）────────────────────────────────────
     levels = df['用户等级_动态'].values

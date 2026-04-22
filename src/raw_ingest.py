@@ -90,6 +90,100 @@ def get_existing_dates(output_dir: str) -> set:
     return existing
 
 
+def quick_scan_file_dates(file_path: str, max_rows: int = 50) -> set:
+    """
+    快速扫描文件前几行，提取包含的日期集合
+    
+    Args:
+        file_path: CSV文件路径
+        max_rows: 最大扫描行数
+        
+    Returns:
+        该文件包含的日期集合
+    """
+    dates = set()
+    try:
+        df = pd.read_csv(file_path, encoding='utf-8', nrows=max_rows, low_memory=False)
+        
+        if len(df) == 0:
+            return dates
+            
+        df = normalize_column_names(df)
+        
+        if '统计日期' in df.columns:
+            date_series = pd.to_datetime(df['统计日期'], errors='coerce').dt.strftime('%Y-%m-%d')
+            dates = set(date_series.dropna().unique())
+        elif '时间戳' in df.columns:
+            ts_col = pd.to_numeric(df['时间戳'], errors='coerce').dropna()
+            if len(ts_col) > 0:
+                date_series = pd.to_datetime(ts_col, unit='s', errors='coerce').dt.strftime('%Y-%m-%d')
+                dates = set(date_series.dropna().unique())
+                
+    except Exception:
+        pass
+    
+    return dates
+
+
+def filter_files_by_existing_dates(all_files: List[str], existing_dates: set) -> Tuple[List[str], Dict[str, int]]:
+    """
+    根据已有日期过滤文件列表
+    
+    Args:
+        all_files: 所有原始文件路径
+        existing_dates: 已存在的日期集合
+        
+    Returns:
+        (需要处理的文件列表, {日期: 文件数} 统计)
+    """
+    if not existing_dates:
+        return all_files, {}
+    
+    files_to_process = []
+    date_file_count = {}
+    skipped_by_date = {}
+    unknown_dates = []
+    
+    print(f"🔍 快速扫描文件日期信息（跳过已有数据的日期）...")
+    scan_start = time.time()
+    
+    for i, file_path in enumerate(all_files):
+        file_dates = quick_scan_file_dates(file_path)
+        
+        if not file_dates:
+            unknown_dates.append(file_path)
+            files_to_process.append(file_path)
+        else:
+            relevant_dates = file_dates - existing_dates
+            if relevant_dates:
+                files_to_process.append(file_path)
+                for d in relevant_dates:
+                    date_file_count[d] = date_file_count.get(d, 0) + 1
+            else:
+                for d in file_dates:
+                    skipped_by_date[d] = skipped_by_date.get(d, 0) + 1
+        
+        if (i + 1) % 1000 == 0 or i == len(all_files) - 1:
+            elapsed = time.time() - scan_start
+            print(f"   📂 扫描进度: {i+1}/{len(all_files)} ({elapsed:.1f}s)")
+    
+    scan_time = time.time() - scan_start
+    total_skipped = sum(skipped_by_date.values())
+    
+    print(f"\n✅ 文件过滤完成:")
+    print(f"   📊 总文件数: {len(all_files)}")
+    print(f"   ⏭️  跳过已有数据: {total_skipped} 个文件")
+    print(f"   ✅ 需要处理: {len(files_to_process)} 个文件")
+    print(f"   ⏱️  扫描耗时: {scan_time:.2f}s")
+    
+    if skipped_by_date:
+        print(f"   📅 按日期跳过详情:")
+        for d, count in sorted(skipped_by_date.items()):
+            print(f"      - {d}: {count} 个文件")
+    
+    return files_to_process, date_file_count
+
+
 def process_batch(file_batch: List[str], temp_dir: str, batch_idx: int, existing_dates: set = None) -> Optional[List[str]]:
     """
     处理一批CSV文件，按日期拆分写入临时parquet文件
@@ -237,6 +331,17 @@ def ingest_raw_data(target_date: Optional[str] = None, base_path: str = BASE_EXP
 
     total_files = len(all_files)
     print(f"📂 找到 {total_files} 个原始数据文件")
+
+    # 根据已有日期过滤文件（避免处理已有数据的日期）
+    if existing_dates:
+        all_files, date_file_count = filter_files_by_existing_dates(all_files, existing_dates)
+        
+        if not all_files:
+            print("✅ 所有日期数据已存在，无需处理")
+            return {d: os.path.join(output_dir, f"{d}.parquet") for d in existing_dates}
+        
+        total_files = len(all_files)
+    
     print(f"⚡ 使用 {MAX_WORKERS} 个并行进程，每批 {BATCH_SIZE} 个文件")
 
     # 创建临时目录
