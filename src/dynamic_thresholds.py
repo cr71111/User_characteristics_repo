@@ -428,13 +428,21 @@ class DynamicBatteryAnalyzer:
             self._print_shift_report(shift_report)
 
             # Step 6: EMA 平滑更新基准线
+            print(f'[DynamicThresholds] [DEBUG] EMA配置状态 - use_ema: {self.use_ema}')
+            print(f'[DynamicThresholds] [DEBUG] 分布漂移检测结果 - has_shift: {shift_report.get("has_shift")}')
+            
             if self.use_ema and shift_report.get('has_shift'):
-                print('[DynamicThresholds] [EMA] Performing EMA smoothing update...')
+                print('[DynamicThresholds] [EMA] ✅ 检测到分布漂移，执行EMA平滑更新...')
                 for suggestion in shift_report.get('suggestions', []):
                     print(f'   -> {suggestion}')
                 self._ema_update_baseline(live_quantiles)
                 active = self.store.load()
+                print('[DynamicThresholds] [EMA] ✅ 基准线文件已更新')
+            elif self.use_ema and not shift_report.get('has_shift'):
+                print('[DynamicThresholds] [EMA] ℹ️ 未检测到分布漂移，保持当前基准线不变')
+                active = live_baseline
             else:
+                print('[DynamicThresholds] [EMA] ⚠️ EMA功能未启用，使用实时计算的基准线')
                 active = live_baseline
         else:
             print('[DynamicThresholds] [NEW] No history baseline, creating initial baseline')

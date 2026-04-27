@@ -22,14 +22,18 @@ def get_full_path(relative_path):
 # -------------------------- 2. 输入数据路径 --------------------------
 USER_BEHAVIOR_FOLDER = "用户行为习惯/用户特征画像"
 
+# 新数据源：每日parquet文件，文件名格式 battery_status_YYYY-MM-DD.parquet
 BATTERY_STATUS_FOLDER = f"基础数据/用户电池情况"
-EXPORT_PATH_BATTERY_STATUS_30D = get_full_path(f"{BATTERY_STATUS_FOLDER}/前30天-前4天")
-EXPORT_PATH_BATTERY_STATUS_3D = get_full_path(f"{BATTERY_STATUS_FOLDER}/前3天-昨天")
+EXPORT_PATH_BATTERY_STATUS_DAILY = get_full_path(f"{BATTERY_STATUS_FOLDER}")
 
 GEOJSON_FOLDER = "基础数据/省市区围栏"
 EXPORT_FILE_PROVINCE_GEOJSON = get_full_path(f"{GEOJSON_FOLDER}/中国_省.geojson")
 EXPORT_FILE_CITY_GEOJSON = get_full_path(f"{GEOJSON_FOLDER}/中国_市.geojson")
 EXPORT_FILE_DISTRICT_GEOJSON = get_full_path(f"{GEOJSON_FOLDER}/中国_县.geojson")
+
+# 合约信息
+CONTRACT_FOLDER = "合约信息"
+EXPORT_FILE_CONTRACT_EARLY = get_full_path(f"{CONTRACT_FOLDER}/4-5用户最早合约时间.csv")
 
 
 # -------------------------- 3. 输出数据路径 --------------------------

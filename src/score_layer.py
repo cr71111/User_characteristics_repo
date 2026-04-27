@@ -285,7 +285,7 @@ def score_and_classify(
     
     total = np.where(is_silent, 20.0, total)
     
-    df['重评分数'] = np.maximum(0.0, total).round(1)
+    df['重评分数'] = np.clip(total, 0, 100).round(1)
 
     # ── B3. 基于重评分数动态计算等级门槛（修复分位数塌陷）───────────────
     # 使用活跃用户（非沉默用户）的真实重评分数分布来动态切割门槛
@@ -438,7 +438,11 @@ def generate_score_layer(fact_7d_rolling_path, baseline_path=None, output_path=N
         baseline_path = os.path.join(os.path.dirname(__file__), 'thresholds_baseline.json')
     
     if DynamicBatteryAnalyzer:
-        analyzer = DynamicBatteryAnalyzer(baseline_path=baseline_path)
+        analyzer = DynamicBatteryAnalyzer(
+            baseline_path=baseline_path,
+            use_ema_update=True,  # 启用EMA自动更新基准文件
+            ema_alpha=0.3
+        )
     else:
         print("❌ 动态阈值分析器不可用")
         return None
@@ -486,7 +490,11 @@ def run_dynamic_analysis_on_fact(df_fact, baseline_path=None):
     
     try:
         print(f"\n[1/3] 初始化分析器...")
-        analyzer = DynamicBatteryAnalyzer(baseline_path=baseline_path)
+        analyzer = DynamicBatteryAnalyzer(
+            baseline_path=baseline_path,
+            use_ema_update=True,  # 启用EMA自动更新基准文件
+            ema_alpha=0.3
+        )
         
         print(f"[2/3] 计算动态阈值（{total_users:,} 用户）...")
         thresholds, baseline = analyzer.run(df_fact)

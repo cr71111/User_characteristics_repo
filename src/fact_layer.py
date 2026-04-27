@@ -26,8 +26,9 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from config.config import BASE_EXPORT_PATH, EXPORT_PATH_FACT_DAILY, EXPORT_PATH_RAW
-from utils.geo import batch_gps_to_region
+from config.config import BASE_EXPORT_PATH, EXPORT_PATH_FACT_DAILY, EXPORT_PATH_BATTERY_STATUS_DAILY
+from utils.geo import batch_gps_to_region, haversine
+from score_common import calc_monthly_score_v2, determine_user_level_v2
 
 # ==============================================================================
 # 全局配置参数（严格按照旧脚本）
@@ -107,16 +108,6 @@ MAX_CHANGE_DEDUCT = 8
 # ==============================================================================
 # 辅助函数
 # ==============================================================================
-def haversine(lat1, lon1, lat2, lon2, unit='km'):
-    """Haversine公式计算地球表面两点间距离"""
-    R = 6371 if unit == 'km' else 6371000
-    lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
-    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
-    return R * c
-
 
 def get_real_center(group):
     """计算真实中心点（去除异常GPS点）"""
@@ -137,158 +128,6 @@ def get_real_center(group):
     if valid_mask.sum() > 0:
         return lat_data[valid_mask].mean(), lon_data[valid_mask].mean()
     return lat_data.mean(), lon_data.mean()
-
-
-def _calc_monthly_score_v2(**kwargs):
-    """包月友好评分计算（严格按照旧脚本逻辑，100分基准多维度扣分）"""
-    # 沉默用户识别提前至基础计算层（修复Bug2：高分悖论）
-    daily_distance = kwargs.get('daily_distance', 0)
-    battery_change_cnt = kwargs.get('battery_change_cnt', 0)
-    if daily_distance == 0 and battery_change_cnt == 0:
-        return 20  # 沉默用户统一给20分，避免日级数据得满分、7天聚合得20分的冲突
-    
-    max_speed = kwargs.get('max_speed', 0)
-    max_temp = kwargs.get('max_temp', 0)
-    riding_avg_current = kwargs.get('riding_avg_current', 0)
-    current_60a_count = kwargs.get('current_60a_count', 0)
-    current_80a_count = kwargs.get('current_80a_count', 0)
-    over100a_cont = kwargs.get('over100a_cont', 0)
-    max_trip_current_cv = kwargs.get('max_trip_current_cv', 0)
-    current_cv = kwargs.get('current_cv', 0)
-    avg_riding_speed = kwargs.get('avg_riding_speed', 0)
-    soc_data_valid = kwargs.get('soc_data_valid', False)
-    has_real_ride = kwargs.get('has_real_ride', False)
-    soc_below_10_ratio = kwargs.get('soc_below_10_ratio', 0)
-    soc_below_20_ratio = kwargs.get('soc_below_20_ratio', 0)
-    min_soc = kwargs.get('min_soc', 100)
-    avg_soc = kwargs.get('avg_soc', 50)
-    energy_data_valid = kwargs.get('energy_data_valid', False)
-    energy_per_100km = kwargs.get('energy_per_100km', 0)
-    battery_change_count = kwargs.get('battery_change_count', 0)
-    
-    score = 100.0
-
-    # ── A. 速度维度（最大扣10分）──
-    if max_speed >= 80:
-        score -= 10
-    elif max_speed >= 60:
-        score -= 6
-    elif max_speed >= 50:
-        score -= 3
-
-    # ── B. 温度维度（最大扣8分）──
-    if max_temp >= 70:
-        score -= 8
-    elif max_temp >= 55:
-        score -= 4
-
-    # ── C. 电流维度（最大扣25分）──
-    if riding_avg_current >= 40.4:
-        score -= 15
-    elif riding_avg_current >= 32.1:
-        score -= 10
-    elif riding_avg_current >= 28.3:
-        score -= 5
-    elif riding_avg_current >= 22.3:
-        score -= 2
-
-    # 电流>80A次数扣分（排除>100A的部分）
-    deduct_80a = min(current_80a_count * 1.5, 8)
-    score -= deduct_80a
-
-    if over100a_cont > 0:
-        score -= min(over100a_cont * 4, 12)
-
-    if max_trip_current_cv >= 1.5:
-        score -= 4
-    elif current_cv >= 0.8:
-        score -= 2 if avg_riding_speed <= 15 else 4
-    elif current_cv >= 0.5:
-        score -= 1
-
-    # ── D. SOC 维度（最大扣15分）──
-    soc_deduct = 0.0
-    if soc_data_valid and has_real_ride:
-        if soc_below_10_ratio >= SOC_CRITICAL_RATIO_DEDUCT_THRESHOLD:
-            soc_deduct += min((soc_below_10_ratio - SOC_CRITICAL_RATIO_DEDUCT_THRESHOLD) / 0.01 * 2, 8)
-
-        if soc_below_20_ratio >= SOC_LOW_RATIO_DEDUCT_THRESHOLD:
-            soc_deduct += min((soc_below_20_ratio - SOC_LOW_RATIO_DEDUCT_THRESHOLD) / 0.02 * 1.5, 5)
-
-        if min_soc <= 5:
-            soc_deduct += 4
-        elif min_soc <= 10:
-            soc_deduct += 2
-
-        if (SOC_OPTIMAL_LOWER <= avg_soc <= SOC_OPTIMAL_UPPER) and soc_below_20_ratio == 0:
-            score += SOC_OPTIMAL_BONUS
-
-    score -= min(soc_deduct, MAX_SOC_DEDUCT)
-
-    # ── E. 电耗维度（最大扣12分）──
-    energy_deduct = 0.0
-    if energy_data_valid and has_real_ride:
-        if energy_per_100km >= EXTREME_ENERGY_THRESHOLD:
-            energy_deduct += 8
-        elif energy_per_100km >= HIGH_ENERGY_THRESHOLD:
-            energy_deduct += 4
-        elif energy_per_100km >= 10.56:
-            energy_deduct += 2
-
-        excess = max(0, battery_change_count - MAX_NORMAL_BATTERY_CHANGE)
-        energy_deduct += min(excess * EXCESS_CHANGE_DEDUCT_PER_TIME, MAX_CHANGE_DEDUCT)
-
-    score -= min(energy_deduct, MAX_ENERGY_DEDUCT)
-
-    return max(0, min(100, round(score)))
-
-
-def _determine_user_level_v2(**kwargs):
-    """用户等级判定（严格按照旧脚本逻辑）"""
-    over100a_cont = kwargs.get('over100a_cont', 0)
-    over100a_hours = kwargs.get('over100a_hours', 0)
-    soc_below_10_ratio = kwargs.get('soc_below_10_ratio', 0)
-    min_soc = kwargs.get('min_soc', 100)
-    current_60a_count = kwargs.get('current_60a_count', 0)
-    energy_per_100km = kwargs.get('energy_per_100km', 0)
-    soc_below_20_ratio = kwargs.get('soc_below_20_ratio', 0)
-    score = kwargs.get('score', 0)
-    riding_avg_current = kwargs.get('riding_avg_current', 0)
-    soc_data_valid = kwargs.get('soc_data_valid', False)
-    energy_data_valid = kwargs.get('energy_data_valid', False)
-    
-    # 暴力用户判定
-    is_violent = False
-    if (over100a_cont >= 2) or (over100a_hours >= 0.1):
-        is_violent = True
-    elif soc_data_valid and (soc_below_10_ratio >= 0.20) and (min_soc <= 5):
-        is_violent = True
-
-    # 高损耗用户判定
-    is_high_loss = False
-    if energy_data_valid and (energy_per_100km >= 17.0):
-        is_high_loss = True
-    elif (riding_avg_current >= 32.1) and soc_data_valid:
-        if soc_below_20_ratio >= 0.10:
-            is_high_loss = True
-    elif soc_data_valid and (soc_below_20_ratio >= 0.20):
-        is_high_loss = True
-    elif (score < 30) and energy_data_valid:
-        is_high_loss = True
-
-    if is_violent:
-        return "暴力"
-    elif is_high_loss:
-        return "高损耗用户"
-    else:
-        if score >= 75:
-            return "优质用户"
-        elif score >= 60:
-            return "良好用户"
-        elif score >= 45:
-            return "普通用户"
-        else:
-            return "高损耗用户"
 
 
 # ==============================================================================
@@ -385,6 +224,14 @@ def calc_contract_metrics(df_sorted):
         
         res = {
             '统计日期': stat_date, '合约id': contract_id, '用户id': user_id,
+            # 原始维度字段备份
+            '代理id': '', '电池id': '',
+            '使用电池数': 0,
+            # 时间字段
+            '最早记录时间戳': 0, '最晚记录时间戳': 0, '记录时长_小时': 0.0,
+            # 在线状态
+            '在线率': 0.0, '在线时长_小时': 0.0,
+            # 空间活动指标
             '核心活动省份': '', '核心活动城市': '', '核心活动区县': '',
             '行驶距离': 0.0, '最大出行距离': 0.0,
             'R90日常活动半径': 0.0, 'R95核心活动半径': 0.0, '凸包覆盖面积': 0.0,
@@ -468,8 +315,50 @@ def calc_contract_metrics(df_sorted):
             )
             group = group.drop(columns=['初始骑行状态'])
 
+            # -------------------------- 0. 原始维度字段统计（备份用）--------------------------
+            res['最早记录时间戳'] = int(group['时间戳'].iloc[0]) if len(group) > 0 else 0
+            res['最晚记录时间戳'] = int(group['时间戳'].iloc[-1]) if len(group) > 0 else 0
+            time_span = (res['最晚记录时间戳'] - res['最早记录时间戳']) / 3600
+            res['记录时长_小时'] = round(max(time_span, 0), 2)
+            
+            # 维度字段：取主要值（出现频率最高）
+            if '代理id' in group.columns:
+                mode_val = group['代理id'].mode()
+                res['代理id'] = str(mode_val.iloc[0]) if len(mode_val) > 0 else ''
+            if '电池id' in group.columns:
+                mode_val = group['电池id'].mode()
+                res['电池id'] = str(mode_val.iloc[0]) if len(mode_val) > 0 else ''
+                res['使用电池数'] = group['电池id'].nunique()
+            
+            # 总用电量（梯形数值积分法：电压×电流×时间）
+            # 公式：E_kWh = Σ (P_i + P_{i+1}) / 2 × Δt_i / 1000
+            # 电压mV÷1000→V，时间戳s÷3600→h，功率W÷1000→kWh
+            if '电压' in group.columns and '电流' in group.columns and '时间戳' in group.columns:
+                u = pd.to_numeric(group['电压'], errors='coerce') / 1000.0
+                i = pd.to_numeric(group['电流'], errors='coerce')
+                t = pd.to_numeric(group['时间戳'], errors='coerce')
+                
+                valid_mask = u.notna() & i.notna() & t.notna()
+                if valid_mask.sum() >= 2:
+                    p_w = u[valid_mask].values * i[valid_mask].values
+                    dt_h = np.diff(t[valid_mask].values) / 3600.0
+                    delta_e_wh = (p_w[:-1] + p_w[1:]) / 2.0 * dt_h
+                    res['总用电量(kWh)'] = round(np.sum(delta_e_wh) / 1000.0, 3)
+            
+            # 在线状态统计
+            if '是否在线' in group.columns:
+                online_count = (group['是否在线'] == 1).sum() | (group['是否在线'] == '是').sum() | (group['是否在线'] == True).sum()
+                res['在线率'] = round(online_count / n, 4) if n > 0 else 0
+                # 在线时长估算（基于采样间隔）
+                if n >= 2 and res['最晚记录时间戳'] > res['最早记录时间戳']:
+                    res['在线时长_小时'] = round(online_count / n * time_span, 2)
+
             total_distance = group['有效里程_km'].sum() if DISTANCE_UNIT_KM else group['有效里程_km'].sum() * 1000
             res['行驶距离'] = round(total_distance, 2)
+            
+            # 百公里电耗计算（必须在行驶距离赋值之后）
+            if res.get('总用电量(kWh)', 0) > 0 and res['行驶距离'] > 0:
+                res['百公里电耗(kWh)'] = round(res['总用电量(kWh)'] / (res['行驶距离'] / 100), 3)
 
             # -------------------------- 2. 空间活动指标计算 --------------------------
             riding_points = group.loc[group['骑行状态'] == 1, ['纬度', '经度']].values
@@ -604,7 +493,7 @@ def calc_contract_metrics(df_sorted):
             res['当日是否出勤'] = is_work_day
 
             # -------------------------- 6. 速度指标计算 --------------------------
-            riding_speed_data = group.loc[group['骑行状态'] == 1, ['速度', '时间戳']].dropna(subset=['速度'])
+            riding_speed_data = group.loc[group['有效里程_km'] > 0, ['速度', '时间戳']].dropna(subset=['速度'])
             max_speed = 0.0
             max_speed_time = pd.NA
             avg_riding_speed = 0.0
@@ -769,10 +658,8 @@ def calc_contract_metrics(df_sorted):
             res['最大温度时间'] = max_temp_time
             res['平均温度'] = round(avg_temp, 2)
 
-            # -------------------------- 11. 电池能耗与换电次数计算 --------------------------
-            total_energy_used = 0.0
+            # -------------------------- 11. 换电次数与SOC计算 --------------------------
             battery_change_count = 0
-            energy_per_100km = 0.0
             riding_soc_data = pd.Series(dtype='float64')
 
             if '电池id' in group.columns:
@@ -820,44 +707,21 @@ def calc_contract_metrics(df_sorted):
                 else:
                     res['偏好换电时段'] = '高峰'
 
-            # 取电/还电 SOC 记录
+            # 取电/还电 SOC 记录（仅保留SOC统计，用电量已由梯形积分法计算）
             start_socs, end_socs = [], []
 
-            if '电池度数' in group.columns and '电池id' in group.columns and '电池SOC' in group.columns:
+            if '电池SOC' in group.columns and '电池id' in group.columns:
                 for battery_segment, batt_group in group.groupby(group['电池切换标记'].cumsum()):
-                    batt_group = batt_group.dropna(subset=['电池度数'])
-                    if len(batt_group) < 2: continue
-                    start_energy = batt_group['电池度数'].iloc[0]
-                    end_energy = batt_group['电池度数'].iloc[-1]
-                    if start_energy > end_energy:
-                        total_energy_used += (start_energy - end_energy)
-
                     soc_seg = batt_group['电池SOC'].dropna()
                     if len(soc_seg) >= 2:
                         start_socs.append(soc_seg.iloc[0])
                         end_socs.append(soc_seg.iloc[-1])
-
-            else:
-                if '电池度数' in group.columns and '电池id' in group.columns:
-                    for battery_segment, batt_group in group.groupby(group['电池切换标记'].cumsum()):
-                        batt_group = batt_group.dropna(subset=['电池度数'])
-                        if len(batt_group) < 2: continue
-                        start_energy = batt_group['电池度数'].iloc[0]
-                        end_energy = batt_group['电池度数'].iloc[-1]
-                        if start_energy > end_energy:
-                            total_energy_used += (start_energy - end_energy)
 
             res['取电时平均SOC'] = round(np.mean(start_socs), 1) if start_socs else np.nan
             res['还电时平均SOC'] = round(np.mean(end_socs), 1) if end_socs else np.nan
             res['单次换电平均SOC消耗'] = round(
                 np.mean(start_socs) - np.mean(end_socs), 1
             ) if start_socs and end_socs else np.nan
-
-            res['总用电量(kWh)'] = round(total_energy_used, 2)
-
-            if total_distance > 1.0:
-                energy_per_100km = (total_energy_used / total_distance) * 100
-            res['百公里电耗(kWh)'] = round(energy_per_100km, 2)
 
             # -------------------------- 12. SOC电池健康指标计算 --------------------------
             soc_data_valid = False
@@ -877,9 +741,9 @@ def calc_contract_metrics(df_sorted):
                 work_span_hours = (riding_time_data.max() - riding_time_data.min()) / 3600
                 res['工作时长覆盖(小时)'] = round(work_span_hours, 1)
 
-                # 骑行时刻分布
+                # 骑行时刻分布（使用有效里程>0的点，与行驶距离逻辑一致）
                 riding_hours = pd.to_datetime(
-                    group.loc[group['骑行状态'] == 1, '时间戳'], unit='s', errors='coerce'
+                    group.loc[group['有效里程_km'] > 0, '时间戳'], unit='s', errors='coerce'
                 ).dt.hour.dropna()
                 if len(riding_hours) > 0:
                     res['最早骑行时刻_h'] = int(riding_hours.min())
@@ -896,7 +760,7 @@ def calc_contract_metrics(df_sorted):
                         res['主要骑行时段'] = '平峰'
 
             # -------------------------- 13.5. 数据有效性标记 --------------------------
-            energy_data_valid = (energy_per_100km > 0)
+            energy_data_valid = (res.get('总用电量(kWh)', 0) > 0)
 
             # -------------------------- 14. 客户形态判定 --------------------------
             has_real_ride = (total_riding_hours >= VALID_RIDE_MIN_HOUR) and (total_distance > 0)
@@ -933,7 +797,7 @@ def calc_contract_metrics(df_sorted):
             res['客户形态'] = customer_type
 
             # -------------------------- 15. 包月友好评分体系计算 --------------------------
-            score = _calc_monthly_score_v2(
+            score = calc_monthly_score_v2(
                 max_speed=max_speed,
                 max_temp=max_temp,
                 riding_avg_current=riding_avg_current,
@@ -950,7 +814,7 @@ def calc_contract_metrics(df_sorted):
                 min_soc=res['最低SOC'],
                 avg_soc=res['平均骑行SOC'],
                 energy_data_valid=energy_data_valid,
-                energy_per_100km=energy_per_100km,
+                energy_per_100km=res.get('百公里电耗(kWh)', 0),
                 battery_change_count=battery_change_count,
                 daily_distance=total_distance,
                 battery_change_cnt=battery_change_count
@@ -965,14 +829,14 @@ def calc_contract_metrics(df_sorted):
             res['包月友好评分'] = score
 
             # -------------------------- 16. 用户等级判定 --------------------------
-            user_level = _determine_user_level_v2(
+            user_level = determine_user_level_v2(
                 over100a_cont=res['超100A连续次数'],
                 over100a_hours=res['超100A累计时长_h'],
                 current_80a_count=0,
                 soc_below_10_ratio=res['SOC低于10%时长占比'],
                 min_soc=res['最低SOC'],
                 current_60a_count=res['电流>60A次数'],
-                energy_per_100km=energy_per_100km,
+                energy_per_100km=res.get('百公里电耗(kWh)', 0),
                 soc_below_20_ratio=res['SOC低于20%时长占比'],
                 score=score,
                 riding_avg_current=riding_avg_current,
@@ -1003,8 +867,8 @@ def calc_contract_metrics(df_sorted):
                 reasons = []
                 if res['电流>60A次数'] >= HIGH_LOSS_CURRENT_TIMES:
                     reasons.append(f"中高电流使用频繁（电流超60A共{res['电流>60A次数']}次）")
-                if energy_data_valid and energy_per_100km >= EXTREME_ENERGY_THRESHOLD:
-                    reasons.append(f"能耗极高（百公里电耗{energy_per_100km}kWh）")
+                if energy_data_valid and res.get('百公里电耗(kWh)', 0) >= EXTREME_ENERGY_THRESHOLD:
+                    reasons.append(f"能耗极高（百公里电耗{res['百公里电耗(kWh)']}kWh）")
                 if soc_data_valid and res['SOC低于20%时长占比'] >= 0.5:
                     reasons.append(f"长期低电量运行（SOC低于20%时长占比{res['SOC低于20%时长占比']*100:.0f}%）")
                 if not reasons:
@@ -1058,19 +922,29 @@ def process_fact_layer(target_date: Optional[str] = None, base_path: Optional[st
     if base_path is None:
         base_path = BASE_EXPORT_PATH
     
-    raw_dir = os.path.join(base_path, EXPORT_PATH_RAW)
+    # 新数据源：直接从 battery_status_YYYY-MM-DD.parquet 读取
+    raw_dir = os.path.join(base_path, EXPORT_PATH_BATTERY_STATUS_DAILY)
     output_dir = os.path.join(base_path, EXPORT_PATH_FACT_DAILY)
     os.makedirs(output_dir, exist_ok=True)
     
-    raw_files = sorted([f for f in os.listdir(raw_dir) if f.endswith('.parquet')])
+    raw_files = sorted([f for f in os.listdir(raw_dir) if f.startswith('battery_status_') and f.endswith('.parquet')])
     if not raw_files:
         print("❌ 未找到原始数据文件")
+        return {}
+    
+    # 过滤掉当天的数据（只计算到昨日）
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    raw_files = [f for f in raw_files if f.replace('battery_status_', '').replace('.parquet', '') < today_str]
+    if not raw_files:
+        print("❌ 未找到需要处理的数据（当天数据已过滤）")
         return {}
     
     processed = {}
     
     for filename in raw_files:
-        date_str = filename.replace('.parquet', '')
+        # 从文件名提取日期：battery_status_YYYY-MM-DD.parquet -> YYYY-MM-DD
+        date_str = filename.replace('battery_status_', '').replace('.parquet', '')
+        
         if target_date and date_str != target_date:
             continue
         

@@ -43,6 +43,14 @@ def generate_user_detail(df: pd.DataFrame, output_dir: str) -> str:
     return output_path
 
 
+def generate_user_7d_full(df: pd.DataFrame, output_dir: str) -> str:
+    """生成完整用户7天滚动数据 CSV（全量字段）"""
+    output_path = os.path.join(output_dir, "user_7d_full.csv")
+    df.to_csv(output_path, index=False, encoding='utf-8-sig')
+    print(f"   ✅ 用户7天滚动全量数据: {output_path} ({len(df):,} 用户, {len(df.columns)} 字段)")
+    return output_path
+
+
 def generate_level_distribution(df: pd.DataFrame, output_dir: str) -> str:
     """生成用户等级分布统计 CSV"""
     output_path = os.path.join(output_dir, "level_distribution.csv")
@@ -162,6 +170,25 @@ def generate_summary(df: pd.DataFrame, output_dir: str) -> str:
     return output_path
 
 
+def generate_attendance_detail(df: pd.DataFrame, output_dir: str) -> str:
+    """生成用户月度出勤预估明细 CSV"""
+    output_path = os.path.join(output_dir, "user_monthly_attendance_detail.csv")
+    
+    attendance_cols = [
+        '用户id', '统计日期',
+        '近7d出勤天数', '近7d出勤率', '近7天有数据天数',
+        '单合约月度用电度数预估_kWh', '近7d总用电量_kWh',
+        '近7d总行驶距离_km', '客户形态_综合_7d', '用户等级_动态'
+    ]
+    
+    available_cols = [c for c in attendance_cols if c in df.columns]
+    df_attendance = df[available_cols].copy()
+    
+    df_attendance.to_csv(output_path, index=False, encoding='utf-8-sig')
+    print(f"   ✅ 月度出勤预估明细: {output_path} ({len(df_attendance):,} 用户)")
+    return output_path
+
+
 def process_report_layer(target_date: Optional[str] = None, base_path: str = BASE_EXPORT_PATH) -> str:
     """
     L4 Report Layer 主入口
@@ -193,8 +220,10 @@ def process_report_layer(target_date: Optional[str] = None, base_path: str = BAS
 
     print("\n生成报告文件...")
     generate_user_detail(df, output_dir)
+    generate_user_7d_full(df, output_dir)
     generate_level_distribution(df, output_dir)
     generate_risk_alerts(df, output_dir)
+    generate_attendance_detail(df, output_dir)
     generate_shift_report(df, output_dir)
     generate_summary(df, output_dir)
 

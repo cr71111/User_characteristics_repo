@@ -22,6 +22,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from config.config import BASE_EXPORT_PATH, EXPORT_PATH_FACT_DAILY, EXPORT_PATH_SNAPSHOT
+from score_common import calc_monthly_score_v2, determine_user_level_v2
 
 VALID_RIDE_MIN_HOUR = 0.1
 STORAGE_MIN_VALID_GPS_POINTS = 10
@@ -39,12 +40,12 @@ SOC_CRITICAL = 10
 SOC_OPTIMAL_LOWER = 30
 SOC_OPTIMAL_UPPER = 80
 SOC_OPTIMAL_BONUS = 3
-SOC_LOW_RATIO_DEDUCT_THRESHOLD = 0.05
-SOC_CRITICAL_RATIO_DEDUCT_THRESHOLD = 0.01
+SOC_LOW_RATIO_DEDUCT_THRESHOLD = 0.20
+SOC_CRITICAL_RATIO_DEDUCT_THRESHOLD = 0.05
 MAX_SOC_DEDUCT = 15
 
-HIGH_ENERGY_THRESHOLD = 12
-EXTREME_ENERGY_THRESHOLD = 17
+HIGH_ENERGY_THRESHOLD = 13.8
+EXTREME_ENERGY_THRESHOLD = 17.0
 MAX_NORMAL_BATTERY_CHANGE = 3
 EXCESS_CHANGE_DEDUCT_PER_TIME = 2
 MAX_CHANGE_DEDUCT = 8
@@ -52,7 +53,7 @@ MAX_ENERGY_DEDUCT = 12
 
 VIOLENT_CURRENT_TIMES = 2
 OVER_CURRENT_MIN_HOUR = 0.1
-HIGH_LOSS_CURRENT_TIMES = 5
+HIGH_LOSS_CURRENT_TIMES = 2
 
 NOON_PEAK_HOURS = set(range(11, 14))
 EVENING_PEAK_HOURS = set(range(17, 20))
@@ -94,132 +95,6 @@ def determine_customer_type(total_riding_hours, total_distance, idle_discharge_h
         return "数据不足"
 
 
-def _calc_monthly_score_v2(
-    max_speed, max_temp, riding_avg_current,
-    current_60a_count, current_80a_count, over100a_cont,
-    max_trip_current_cv, current_cv, avg_riding_speed,
-    soc_data_valid, has_real_ride, soc_below_10_ratio, soc_below_20_ratio,
-    min_soc, avg_soc,
-    energy_data_valid, energy_per_100km, battery_change_count,
-    daily_distance=0, battery_change_cnt=0
-):
-    """包月友好评分（严格按照旧脚本逻辑）"""
-    if daily_distance == 0 and battery_change_cnt == 0:
-        return 20
-
-    score = 100.0
-
-    if max_speed >= 80:
-        score -= 10
-    elif max_speed >= 60:
-        score -= 6
-    elif max_speed >= 50:
-        score -= 3
-
-    if max_temp >= 70:
-        score -= 8
-    elif max_temp >= 55:
-        score -= 4
-
-    if riding_avg_current >= 40.4:
-        score -= 15
-    elif riding_avg_current >= 32.1:
-        score -= 10
-    elif riding_avg_current >= 28.3:
-        score -= 5
-    elif riding_avg_current >= 22.3:
-        score -= 2
-
-    deduct_80a = min(current_80a_count * 1.5, 8)
-    score -= deduct_80a
-
-    if over100a_cont > 0:
-        score -= min(over100a_cont * 4, 12)
-
-    if max_trip_current_cv >= 1.5:
-        score -= 4
-    elif current_cv >= 0.8:
-        score -= 2 if avg_riding_speed <= 15 else 4
-    elif current_cv >= 0.5:
-        score -= 1
-
-    soc_deduct = 0.0
-    if soc_data_valid and has_real_ride:
-        if soc_below_10_ratio >= SOC_CRITICAL_RATIO_DEDUCT_THRESHOLD:
-            soc_deduct += min((soc_below_10_ratio - SOC_CRITICAL_RATIO_DEDUCT_THRESHOLD) / 0.01 * 2, 8)
-
-        if soc_below_20_ratio >= SOC_LOW_RATIO_DEDUCT_THRESHOLD:
-            soc_deduct += min((soc_below_20_ratio - SOC_LOW_RATIO_DEDUCT_THRESHOLD) / 0.02 * 1.5, 5)
-
-        if min_soc <= 5:
-            soc_deduct += 4
-        elif min_soc <= 10:
-            soc_deduct += 2
-
-        if (SOC_OPTIMAL_LOWER <= avg_soc <= SOC_OPTIMAL_UPPER) and soc_below_20_ratio == 0:
-            score += SOC_OPTIMAL_BONUS
-
-    score -= min(soc_deduct, MAX_SOC_DEDUCT)
-
-    energy_deduct = 0.0
-    if energy_data_valid and has_real_ride:
-        if energy_per_100km >= EXTREME_ENERGY_THRESHOLD:
-            energy_deduct += 8
-        elif energy_per_100km >= HIGH_ENERGY_THRESHOLD:
-            energy_deduct += 4
-        elif energy_per_100km >= 10.56:
-            energy_deduct += 2
-
-        excess = max(0, battery_change_count - MAX_NORMAL_BATTERY_CHANGE)
-        energy_deduct += min(excess * EXCESS_CHANGE_DEDUCT_PER_TIME, MAX_CHANGE_DEDUCT)
-
-    score -= min(energy_deduct, MAX_ENERGY_DEDUCT)
-
-    return max(0, min(100, round(score)))
-
-
-def _determine_user_level_v2(
-    over100a_cont, over100a_hours,
-    current_80a_count, soc_below_10_ratio, min_soc,
-    current_60a_count, energy_per_100km, soc_below_20_ratio,
-    score, riding_avg_current,
-    soc_data_valid, energy_data_valid
-):
-    """用户等级判定（严格按照旧脚本逻辑）"""
-    is_violent = False
-
-    if (over100a_cont >= 2) or (over100a_hours >= 0.1):
-        is_violent = True
-    elif soc_data_valid and (soc_below_10_ratio >= 0.20) and (min_soc <= 5):
-        is_violent = True
-
-    is_high_loss = False
-
-    if energy_data_valid and (energy_per_100km >= 17.0):
-        is_high_loss = True
-    elif (riding_avg_current >= 32.1) and soc_data_valid:
-        if soc_below_20_ratio >= 0.10:
-            is_high_loss = True
-    elif soc_data_valid and (soc_below_20_ratio >= 0.20):
-        is_high_loss = True
-    elif (score < 30) and energy_data_valid:
-        is_high_loss = True
-
-    if is_violent:
-        return "暴力用户（超量放电/电池滥用）"
-    elif is_high_loss:
-        return "高损耗用户"
-    else:
-        if score >= 75:
-            return "优质用户"
-        elif score >= 60:
-            return "良好用户"
-        elif score >= 45:
-            return "普通用户"
-        else:
-            return "高损耗用户"
-
-
 def _get_user_type(group):
     """获取用户客户形态（按优先级）"""
     priority = ["改装/超速车", "地摊/储能"]
@@ -236,7 +111,7 @@ def _get_user_type(group):
 
 def _get_user_level(levels):
     """获取用户等级（按优先级）"""
-    priority = ["暴力用户（超量放电/电池滥用）", "高损耗用户", "普通用户", "良好用户", "优质用户", "无效"]
+    priority = ["暴力", "高损耗用户", "普通用户", "良好用户", "优质用户", "无效"]
     for l in priority:
         if l in list(levels): return l
     return "无效"
@@ -244,7 +119,7 @@ def _get_user_level(levels):
 
 def _get_level_desc(levels, descs):
     """获取用户等级说明"""
-    priority = ["暴力用户（超量放电/电池滥用）", "高损耗用户", "普通用户", "良好用户", "优质用户", "无效"]
+    priority = ["暴力", "高损耗用户", "普通用户", "良好用户", "优质用户", "无效"]
     temp_df = pd.DataFrame({'level': levels, 'desc': descs})
     for l in priority:
         if l in temp_df['level'].values:
@@ -265,7 +140,7 @@ def _get_type_desc(types, descs):
 def _generate_level_desc(row):
     """生成用户等级说明"""
     current_level = row['用户等级']
-    if current_level == "暴力用户（超量放电/电池滥用）":
+    if current_level == "暴力":
         reasons = []
         if row['超100A连续次数'] >= VIOLENT_CURRENT_TIMES:
             reasons.append(f"超100A连续放电{row['超100A连续次数']}次，触发阈值")

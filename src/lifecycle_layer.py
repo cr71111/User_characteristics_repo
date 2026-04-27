@@ -11,7 +11,7 @@ L3 Lifecycle Layer - 用户生命周期层
 import os
 import sys
 import warnings
-from typing import Optional
+from typing import Optional, Tuple
 
 import pandas as pd
 import numpy as np
@@ -23,7 +23,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from config.config import BASE_EXPORT_PATH, EXPORT_PATH_SNAPSHOT, EXPORT_PATH_LIFECYCLE_7D
+from config.config import BASE_EXPORT_PATH, EXPORT_PATH_SNAPSHOT, EXPORT_PATH_LIFECYCLE_7D, EXPORT_FILE_CONTRACT_EARLY
 from dynamic_thresholds import DynamicBatteryAnalyzer
 
 ROLLING_WINDOW_DAYS = 7
@@ -47,6 +47,68 @@ LEVEL_RANK = {
     '暴力': 6, '高损耗用户': 4, '普通用户': 3, '观察期': 3,
     '良好用户': 2, '优质用户': 1, '未知': 3, '沉默用户': 5
 }
+
+# 全局合约信息缓存
+_user_contract_map = None
+
+
+def load_user_contract_info():
+    """
+    加载用户合约信息（首次入网日期、合约到期时间）
+    
+    Returns:
+        dict: {user_id: {'join_date': 'YYYY-MM-DD', 'expire_date': 'YYYY-MM-DD'}}
+    """
+    global _user_contract_map
+    if _user_contract_map is not None:
+        return _user_contract_map
+    
+    if not os.path.exists(EXPORT_FILE_CONTRACT_EARLY):
+        print(f"⚠️ 用户合约信息表不存在：{EXPORT_FILE_CONTRACT_EARLY}")
+        _user_contract_map = {}
+        return _user_contract_map
+    
+    print(f"📂 正在加载用户合约信息表...")
+    try:
+        df_contract = pd.read_csv(EXPORT_FILE_CONTRACT_EARLY, encoding='utf-8')
+    except UnicodeDecodeError:
+        df_contract = pd.read_csv(EXPORT_FILE_CONTRACT_EARLY, encoding='gbk')
+    
+    df_contract.columns = [str(col).strip() for col in df_contract.columns]
+    
+    if 'user_id' not in df_contract.columns:
+        print(f"⚠️ 用户合约信息表缺少user_id列")
+        _user_contract_map = {}
+        return _user_contract_map
+    
+    df_contract['user_id'] = df_contract['user_id'].astype(str).str.strip()
+    df_contract = df_contract[df_contract['user_id'].notna() & (df_contract['user_id'] != 'nan')]
+    
+    # 转换时间列为datetime
+    if '入网时间' in df_contract.columns:
+        df_contract['入网时间'] = pd.to_datetime(df_contract['入网时间'], errors='coerce')
+    if '退网时间' in df_contract.columns:
+        df_contract['退网时间'] = pd.to_datetime(df_contract['退网时间'], errors='coerce')
+    
+    # 使用groupby聚合：入网时间取min，退网时间取max
+    agg_dict = {}
+    if '入网时间' in df_contract.columns:
+        agg_dict['join_date'] = ('入网时间', 'min')
+    if '退网时间' in df_contract.columns:
+        agg_dict['expire_date'] = ('退网时间', 'max')
+    
+    if agg_dict:
+        g = df_contract.groupby('user_id').agg(**agg_dict)
+        _user_contract_map = {}
+        for uid, row in g.iterrows():
+            join_date = row['join_date'].strftime('%Y-%m-%d') if 'join_date' in row and pd.notna(row['join_date']) else None
+            expire_date = row['expire_date'].strftime('%Y-%m-%d') if 'expire_date' in row and pd.notna(row['expire_date']) else None
+            _user_contract_map[uid] = {'join_date': join_date, 'expire_date': expire_date}
+    else:
+        _user_contract_map = {}
+    
+    print(f"✅ 用户合约信息表加载完成：共 {len(_user_contract_map)} 个用户")
+    return _user_contract_map
 
 
 def get_work_pattern(group):
@@ -329,7 +391,9 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
     res['客户形态_综合_7d说明'] = type_desc_7d
 
     latest_record_date = pd.to_datetime(group['统计日期'].max())
-    days_since_last_seen = (latest_date - latest_record_date).days
+    
+    today = pd.Timestamp.now().normalize()
+    days_since_last_seen = (today - latest_record_date).days
     
     if days_since_last_seen >= LONG_TERM_OFFLINE_THRESHOLD_DAYS:
         res['设备状态监控'] = f"异常(离线{days_since_last_seen}天)"
@@ -341,16 +405,92 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
     return res
 
 
-def calc_user_monthly_attendance(df_rolling: pd.DataFrame) -> pd.DataFrame:
+# 月度出勤预估参数（借鉴原脚本逻辑）
+MIN_RECORD_DAYS_FOR_ESTIMATE = 7
+FULL_RECORD_DAYS_FOR_CUMULATIVE = 30
+DEFAULT_MONTH_DAYS = 26
+MONTH_CALENDAR_DAYS = 30
+
+
+def calc_user_monthly_attendance(df_rolling: pd.DataFrame, df_snapshot: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    基于用户历史全量数据计算月度用电预估（借鉴原脚本逻辑）
+    
+    分三档：
+    - 有记录天数 < 7：兜底值 26 天
+    - 7 <= 有记录天数 < 30：出勤率 × 30 天（实际出勤率估算）
+    - 有记录天数 >= 30：出勤率 × 30 天（真实累计计算）
+    
+    返回：
+        (df_rolling, df_attendance_detail)
+    """
+    # 按用户聚合历史全量数据
+    attendance_stats = {}
+    attendance_details = []
+    
+    for uid, group in df_snapshot.groupby('用户id'):
+        group_unique = group.drop_duplicates(subset=['统计日期']).sort_values('统计日期')
+        total_record_days = len(group_unique)
+        total_attendance_days = group_unique['当日是否出勤'].sum() if '当日是否出勤' in group_unique.columns else 0
+        attendance_rate = round(total_attendance_days / total_record_days, 4) if total_record_days > 0 else 0
+        
+        # 计算历史单合约日均用电量
+        if '单合约日均用电量_kWh' in group_unique.columns:
+            avg_single_contract_energy = group_unique['单合约日均用电量_kWh'].mean()
+        else:
+            total_cum_energy = group_unique['当日总用电量_kWh'].sum() if '当日总用电量_kWh' in group_unique.columns else 0
+            avg_single_contract_energy = total_cum_energy / total_record_days if total_record_days > 0 else 0
+        
+        # 分档计算月度预估工作天数
+        if total_record_days < MIN_RECORD_DAYS_FOR_ESTIMATE:
+            month_estimate_days = DEFAULT_MONTH_DAYS
+            estimate_type = "兜底值"
+        elif total_record_days < FULL_RECORD_DAYS_FOR_CUMULATIVE:
+            month_estimate_days = round(attendance_rate * MONTH_CALENDAR_DAYS, 1)
+            estimate_type = "实际出勤率估算"
+        else:
+            month_estimate_days = round(attendance_rate * MONTH_CALENDAR_DAYS, 1)
+            estimate_type = "真实累计计算"
+        
+        final_month_energy = round(avg_single_contract_energy * month_estimate_days, 2)
+        
+        attendance_stats[uid] = {
+            '月度预估工作天数': month_estimate_days,
+            '单合约月度用电度数预估_kWh': final_month_energy,
+        }
+        
+        attendance_details.append({
+            '用户id': uid,
+            '有记录的总天数': total_record_days,
+            '实际出勤总天数': total_attendance_days,
+            '历史出勤率': attendance_rate,
+            '历史单合约日均用电量_kWh': round(avg_single_contract_energy, 2),
+            '月度预估工作天数': month_estimate_days,
+            '单合约月度用电度数预估_kWh': final_month_energy,
+            '预估类型': estimate_type,
+            '最新统计日期': group_unique['统计日期'].max()
+        })
+    
+    # 合并到7天滚动数据
     df = df_rolling.copy()
-    df['月度预估工作天数'] = (df['近7d出勤天数'] * 30 / 7).round(0)
-    df['单合约月度用电度数预估_kWh'] = (
-        df['近7d单合约日均骑行时长_h'] * df['近7d百公里电耗_kWh'] * 0.5 * (30 / 7)
-    ).round(2)
-    return df
+    df['月度预估工作天数'] = df['用户id'].map(lambda x: attendance_stats.get(x, {}).get('月度预估工作天数', DEFAULT_MONTH_DAYS))
+    df['单合约月度用电度数预估_kWh'] = df['用户id'].map(lambda x: attendance_stats.get(x, {}).get('单合约月度用电度数预估_kWh', 0))
+    
+    # 生成明细表
+    df_attendance_detail = pd.DataFrame(attendance_details)
+    
+    return df, df_attendance_detail
 
 
 def determine_lifecycle_state(row: dict, current_date: pd.Timestamp) -> str:
+    """
+    判断用户生命周期状态
+    
+    状态优先级：已到期 > 新用户 > 流失 > 沉默 > 轻度活跃 > 活跃
+    """
+    MIN_DAYS_FOR_ACTIVE = 5
+    MIN_DATA_DAYS_TO_AVOID_CHURN = 1
+    
     expire_date = pd.to_datetime(row.get('合约到期时间'), errors='coerce')
     if pd.notna(expire_date) and current_date > expire_date:
         return '已到期'
@@ -365,11 +505,11 @@ def determine_lifecycle_state(row: dict, current_date: pd.Timestamp) -> str:
     has_data_days = row.get('近7天有数据天数', 0)
     
     if attendance_days == 0:
-        if has_data_days <= (7 - 7):
+        if has_data_days <= MIN_DATA_DAYS_TO_AVOID_CHURN:
             return '流失'
         else:
             return '沉默'
-    elif attendance_days >= 5:
+    elif attendance_days >= MIN_DAYS_FOR_ACTIVE:
         return '活跃'
     else:
         return '轻度活跃'
@@ -383,9 +523,11 @@ def _add_derived_portrait_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
     offpeak_ratio = df.get('近7d平峰换电占比', pd.Series(0, index=df.index)).fillna(0)
     night_ratio   = df.get('近7d深夜换电占比', pd.Series(0, index=df.index)).fillna(0)
+    
+    total_swaps   = df.get('近7d总换电次数', pd.Series(0, index=df.index)).fillna(0)
 
-    swap_friendly = (offpeak_ratio * 0.6 + night_ratio * 0.4) * 20
-    df['近7d换电友好分'] = swap_friendly.clip(0, 20).round(1)
+    swap_friendly = np.where(total_swaps == 0, 0.0, (offpeak_ratio * 0.6 + night_ratio * 0.4) * 20)
+    df['近7d换电友好分'] = np.clip(swap_friendly, 0, 20).round(1)
 
     def _swap_period_label(row):
         offpeak = row.get('近7d平峰换电占比', 0) or 0
@@ -542,6 +684,9 @@ def process_lifecycle_layer(target_date: Optional[str] = None, base_path: str = 
     print(f"   加载完成：{len(df_snapshot):,} 条记录")
 
     if target_date:
+        # 统一类型：将target_date转为datetime.date以匹配统计日期列
+        if isinstance(target_date, str):
+            target_date = pd.to_datetime(target_date).date()
         df_snapshot = df_snapshot[df_snapshot['统计日期'] <= target_date]
 
     print("\n[2/6] 计算7天滚动指标...")
@@ -552,11 +697,30 @@ def process_lifecycle_layer(target_date: Optional[str] = None, base_path: str = 
     print(f"   完成：{len(df_rolling):,} 个用户")
 
     print("\n[3/6] 计算月度用电预估...")
-    df_rolling = calc_user_monthly_attendance(df_rolling)
+    df_rolling, df_attendance_detail = calc_user_monthly_attendance(df_rolling, df_snapshot)
+    
+    # 保存月度出勤预估明细表
+    attendance_output = os.path.join(os.path.dirname(output_path), 'user_monthly_attendance_detail.csv')
+    df_attendance_detail.to_csv(attendance_output, index=False, encoding='utf-8-sig')
+    print(f"   ✅ 月度出勤预估明细已保存: {attendance_output} ({len(df_attendance_detail):,} 用户)")
+
+    print("\n[3.5/6] 加载合约信息...")
+    contract_map = load_user_contract_info()
+    
+    def get_contract_info(uid):
+        info = contract_map.get(uid, {})
+        return pd.Series([info.get('join_date', None), info.get('expire_date', None)])
+    
+    df_rolling[['首次入网日期', '合约到期时间']] = df_rolling['用户id'].apply(get_contract_info)
+    print(f"   ✅ 合约信息注入完成")
 
     print("\n[4/6] 动态阈值计算与用户评分...")
     baseline_path = os.path.join(os.path.dirname(__file__), 'thresholds_baseline.json')
-    analyzer = DynamicBatteryAnalyzer(baseline_path=baseline_path)
+    analyzer = DynamicBatteryAnalyzer(
+        baseline_path=baseline_path,
+        use_ema_update=True,  # 启用EMA自动更新基准文件
+        ema_alpha=0.3
+    )
     thresholds, baseline = analyzer.run(df_rolling)
 
     from score_layer import score_and_classify
