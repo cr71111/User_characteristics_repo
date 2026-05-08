@@ -456,6 +456,8 @@ class DynamicBatteryAnalyzer:
         return live_quantiles, (active or live_baseline)
 
     # ── 评分 & 分类 ────────────────────────────────────────────────────────
+    # 注意：此方法仅用于 dynamic_thresholds.py 独立运行模式。
+    # Pipeline 中统一使用 score_layer.score_and_classify() 进行评分分类。
 
     def score_and_classify(
         self,

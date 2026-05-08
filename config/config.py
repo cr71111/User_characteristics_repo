@@ -7,12 +7,12 @@ import os
 
 # -------------------------- 1. 基础路径配置 --------------------------
 # 测试模式开关：True - 使用测试路径，False - 使用正式路径
-TEST_MODE = True
+TEST_MODE = False
 
 if TEST_MODE:
     BASE_EXPORT_PATH = r"E:\test"
 else:
-    BASE_EXPORT_PATH = r"E:\OneDrive\Powerbi"
+    BASE_EXPORT_PATH = r"E:\OneDrive\DataBase\DataBase"
 
 def get_full_path(relative_path):
     """根据相对路径生成完整的导出路径"""
@@ -23,7 +23,7 @@ def get_full_path(relative_path):
 USER_BEHAVIOR_FOLDER = "用户行为习惯/用户特征画像"
 
 # 新数据源：每日parquet文件，文件名格式 battery_status_YYYY-MM-DD.parquet
-BATTERY_STATUS_FOLDER = f"基础数据/用户电池情况"
+BATTERY_STATUS_FOLDER = f"{USER_BEHAVIOR_FOLDER}/每日用户数据汇总"
 EXPORT_PATH_BATTERY_STATUS_DAILY = get_full_path(f"{BATTERY_STATUS_FOLDER}")
 
 GEOJSON_FOLDER = "基础数据/省市区围栏"
@@ -37,7 +37,7 @@ EXPORT_FILE_CONTRACT_EARLY = get_full_path(f"{CONTRACT_FOLDER}/4-5用户最早�
 
 
 # -------------------------- 3. 输出数据路径 --------------------------
-DATA_OUTPUT_ROOT = get_full_path(f"{USER_BEHAVIOR_FOLDER}/data")
+DATA_OUTPUT_ROOT = get_full_path(f"{USER_BEHAVIOR_FOLDER}")
 
 EXPORT_PATH_RAW = os.path.join(DATA_OUTPUT_ROOT, "raw")
 EXPORT_PATH_FACT_DAILY = os.path.join(DATA_OUTPUT_ROOT, "fact/daily")

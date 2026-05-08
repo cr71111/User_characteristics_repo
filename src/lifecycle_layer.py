@@ -355,9 +355,15 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
     res['近7d工作特点'] = get_work_pattern(pattern_group)
 
     if '客户形态_综合' in group.columns:
-        type_counts = group['客户形态_综合'].value_counts()
-        if len(type_counts) > 0:
-            res['客户形态_综合_7d'] = type_counts.index[0]
+        type_values = group['客户形态_综合'].dropna()
+        if len(type_values) > 0:
+            unique_types = type_values.unique()
+            if '改装/超速车' in unique_types:
+                res['客户形态_综合_7d'] = '改装/超速车'
+            elif '地摊/储能' in unique_types:
+                res['客户形态_综合_7d'] = '地摊/储能'
+            else:
+                res['客户形态_综合_7d'] = type_values.value_counts().index[0]
         else:
             res['客户形态_综合_7d'] = "数据不足"
     else:
@@ -712,6 +718,11 @@ def process_lifecycle_layer(target_date: Optional[str] = None, base_path: str = 
         return pd.Series([info.get('join_date', None), info.get('expire_date', None)])
     
     df_rolling[['首次入网日期', '合约到期时间']] = df_rolling['用户id'].apply(get_contract_info)
+    
+    current_dt = pd.Timestamp.now()
+    join_dates = pd.to_datetime(df_rolling['首次入网日期'], errors='coerce')
+    df_rolling['入网天数'] = (current_dt - join_dates).dt.days.fillna(999).astype(int)
+    
     print(f"   ✅ 合约信息注入完成")
 
     print("\n[4/6] 动态阈值计算与用户评分...")

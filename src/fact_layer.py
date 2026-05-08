@@ -28,7 +28,11 @@ if project_root not in sys.path:
 
 from config.config import BASE_EXPORT_PATH, EXPORT_PATH_FACT_DAILY, EXPORT_PATH_BATTERY_STATUS_DAILY
 from utils.geo import batch_gps_to_region, haversine
-from score_common import calc_monthly_score_v2, determine_user_level_v2
+from score_common import (
+    calc_monthly_score_v2, determine_user_level_v2,
+    VIOLENT_CURRENT_TIMES, HIGH_LOSS_CURRENT_TIMES, OVER_CURRENT_MIN_HOUR,
+    EXTREME_ENERGY_THRESHOLD,
+)
 
 # ==============================================================================
 # 全局配置参数（严格按照旧脚本）
@@ -87,23 +91,8 @@ OVER_CURRENT_MIN_HOUR = 0.1
 SOC_LOW_WARNING = 20
 SOC_CRITICAL = 10
 
-# 用户等级判定阈值（严格按照旧脚本）
-VIOLENT_CURRENT_TIMES = 2
-HIGH_LOSS_CURRENT_TIMES = 3
-
-# 包月友好评分扣分阈值（严格按照旧脚本）
-SOC_CRITICAL_RATIO_DEDUCT_THRESHOLD = 0.05
-SOC_LOW_RATIO_DEDUCT_THRESHOLD = 0.10
-SOC_OPTIMAL_LOWER = 30
-SOC_OPTIMAL_UPPER = 80
-SOC_OPTIMAL_BONUS = 3
-MAX_SOC_DEDUCT = 15
-EXTREME_ENERGY_THRESHOLD = 17.0
-HIGH_ENERGY_THRESHOLD = 13.8
-MAX_ENERGY_DEDUCT = 12
-MAX_NORMAL_BATTERY_CHANGE = 3
-EXCESS_CHANGE_DEDUCT_PER_TIME = 2
-MAX_CHANGE_DEDUCT = 8
+# 用户等级判定阈值 & 包月友好评分扣分阈值
+# 统一由 score_common.py 管理，fact_layer 通过导入函数间接使用
 
 # ==============================================================================
 # 辅助函数
@@ -195,7 +184,6 @@ def preprocess_raw_data(df_raw):
     df['漂移_前纬度'] = df.groupby(['合约id', '用户id'])['纬度'].shift(1)
     df['漂移_前经度'] = df.groupby(['合约id', '用户id'])['经度'].shift(1)
     df['漂移_前时间戳'] = df.groupby(['合约id', '用户id'])['时间戳'].shift(1)
-    from utils.geo import haversine
     df['漂移_距离差_km'] = haversine(df['漂移_前纬度'], df['漂移_前经度'], df['纬度'], df['经度'], 'km')
     df['漂移_时间差_h'] = (df['时间戳'] - df['漂移_前时间戳']) / 3600
     df['漂移_瞬时速度_kmh'] = np.where(df['漂移_时间差_h'] > 0, df['漂移_距离差_km'] / df['漂移_时间差_h'], 0)
@@ -332,16 +320,23 @@ def calc_contract_metrics(df_sorted):
             
             # 总用电量（梯形数值积分法：电压×电流×时间）
             # 公式：E_kWh = Σ (P_i + P_{i+1}) / 2 × Δt_i / 1000
-            # 电压mV÷1000→V，时间戳s÷3600→h，功率W÷1000→kWh
+            # 电压(0.01V单位)÷100→V，时间戳s÷3600→h，功率W÷1000→kWh
+            # 特殊处理：电流状态切换点（0↔非0）使用固定15秒间隔
             if '电压' in group.columns and '电流' in group.columns and '时间戳' in group.columns:
-                u = pd.to_numeric(group['电压'], errors='coerce') / 1000.0
+                u = pd.to_numeric(group['电压'], errors='coerce') / 100.0
                 i = pd.to_numeric(group['电流'], errors='coerce')
                 t = pd.to_numeric(group['时间戳'], errors='coerce')
                 
                 valid_mask = u.notna() & i.notna() & t.notna()
                 if valid_mask.sum() >= 2:
                     p_w = u[valid_mask].values * i[valid_mask].values
-                    dt_h = np.diff(t[valid_mask].values) / 3600.0
+                    i_vals = i[valid_mask].values
+                    dt_raw = np.diff(t[valid_mask].values) / 3600.0
+                    
+                    current_switch_mask = ((i_vals[:-1] == 0) & (i_vals[1:] != 0)) | ((i_vals[:-1] != 0) & (i_vals[1:] == 0))
+                    SWITCH_INTERVAL_SEC = 15
+                    dt_h = np.where(current_switch_mask, SWITCH_INTERVAL_SEC / 3600.0, dt_raw)
+                    
                     delta_e_wh = (p_w[:-1] + p_w[1:]) / 2.0 * dt_h
                     res['总用电量(kWh)'] = round(np.sum(delta_e_wh) / 1000.0, 3)
             
@@ -821,8 +816,6 @@ def calc_contract_metrics(df_sorted):
             )
             if customer_type == "地摊/储能":
                 score = min(100, score + 20)
-            elif customer_type == "外卖高强度车":
-                score -= 15
             elif customer_type == "改装/超速车":
                 score -= 30
             score = max(0, min(100, round(score)))
@@ -832,7 +825,7 @@ def calc_contract_metrics(df_sorted):
             user_level = determine_user_level_v2(
                 over100a_cont=res['超100A连续次数'],
                 over100a_hours=res['超100A累计时长_h'],
-                current_80a_count=0,
+                current_80a_count=res['电流>80A次数'],
                 soc_below_10_ratio=res['SOC低于10%时长占比'],
                 min_soc=res['最低SOC'],
                 current_60a_count=res['电流>60A次数'],
@@ -851,7 +844,7 @@ def calc_contract_metrics(df_sorted):
             # 1. 用户等级说明
             level_desc = ""
             current_level = res['用户等级']
-            if current_level == "暴力用户（超量放电/电池滥用）":
+            if current_level == "暴力":
                 reasons = []
                 if res['超100A连续次数'] >= VIOLENT_CURRENT_TIMES:
                     reasons.append(f"超100A连续放电{res['超100A连续次数']}次，触发阈值")

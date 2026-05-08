@@ -177,7 +177,7 @@ def main():
     parser.add_argument(
         '--mode',
         choices=['full', 'incremental', 'refresh', 'recalculate', 'report_only'],
-        default='incremental',
+        default='full',
         help='执行模式 (默认: incremental)'
     )
     parser.add_argument(
