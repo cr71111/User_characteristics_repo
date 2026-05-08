@@ -26,7 +26,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from config.config import BASE_EXPORT_PATH, EXPORT_PATH_FACT_DAILY, EXPORT_PATH_BATTERY_STATUS_DAILY
+from config.config import BASE_EXPORT_PATH, EXPORT_PATH_FACT_DAILY, EXPORT_PATH_BATTERY_STATUS_DAILY, EXPORT_FILE_BATTERY_CELL_VOLTAGE
 from utils.geo import batch_gps_to_region, haversine
 from score_common import (
     calc_monthly_score_v2, determine_user_level_v2,
@@ -189,17 +189,47 @@ def preprocess_raw_data(df_raw):
     df['漂移_瞬时速度_kmh'] = np.where(df['漂移_时间差_h'] > 0, df['漂移_距离差_km'] / df['漂移_时间差_h'], 0)
     df = df[(df['漂移_瞬时速度_kmh'] <= DRIFT_SPEED_THRESHOLD) | (df['漂移_瞬时速度_kmh'].isna())]
     df = df.drop(columns=['漂移_前纬度', '漂移_前经度', '漂移_前时间戳', '漂移_距离差_km', '漂移_时间差_h', '漂移_瞬时速度_kmh'], errors='ignore')
-    
+
+    # 过滤离线状态数据
+    if '是否在线' in df.columns:
+        before = len(df)
+        df = df[df['是否在线'] != 0]
+        df = df[df['是否在线'] != '否']
+        df = df[df['是否在线'] != False]
+        removed = before - len(df)
+        if removed > 0:
+            print(f"   🧹 离线数据过滤：移除 {removed:,} 条")
+
     df = df.sort_values(['合约id', '用户id', '时间戳']).reset_index(drop=True)
     
     return df
 
 
 # ==============================================================================
+# 电池电压映射表加载
+# ==============================================================================
+def load_battery_voltage_map(battery_csv_path: str) -> dict:
+    """加载电池id→标准电压(V)映射表"""
+    if not os.path.exists(battery_csv_path):
+        print(f"⚠️ 电池电压表不存在: {battery_csv_path}，将使用默认电压60V")
+        return {}
+    df = pd.read_csv(battery_csv_path)
+    df['电池id'] = pd.to_numeric(df['电池id'], errors='coerce')
+    df['标准电压'] = pd.to_numeric(df['标准电压'], errors='coerce')
+    valid = df[(df['标准电压'] > 0) & df['电池id'].notna()]
+    voltage_map = dict(zip(valid['电池id'].astype(int), valid['标准电压']))
+    print(f"🔋 电池电压映射表加载完成：{len(voltage_map):,} 条有效记录")
+    return voltage_map
+
+
+# ==============================================================================
 # 合约日级指标计算（严格按照旧脚本逻辑）
 # ==============================================================================
-def calc_contract_metrics(df_sorted):
+def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
     """计算合约日级指标（完全对齐旧脚本）"""
+    if battery_voltage_map is None:
+        battery_voltage_map = {}
+    DEFAULT_VOLTAGE = 60.0
     group_keys = ['合约id', '用户id']
     results = []
     groups = list(df_sorted.groupby(group_keys))
@@ -318,27 +348,49 @@ def calc_contract_metrics(df_sorted):
                 res['电池id'] = str(mode_val.iloc[0]) if len(mode_val) > 0 else ''
                 res['使用电池数'] = group['电池id'].nunique()
             
-            # 总用电量（梯形数值积分法：电压×电流×时间）
-            # 公式：E_kWh = Σ (P_i + P_{i+1}) / 2 × Δt_i / 1000
-            # 电压(0.01V单位)÷100→V，时间戳s÷3600→h，功率W÷1000→kWh
-            # 特殊处理：电流状态切换点（0↔非0）使用固定15秒间隔
-            if '电压' in group.columns and '电流' in group.columns and '时间戳' in group.columns:
-                u = pd.to_numeric(group['电压'], errors='coerce') / 100.0
-                i = pd.to_numeric(group['电流'], errors='coerce')
-                t = pd.to_numeric(group['时间戳'], errors='coerce')
-                
-                valid_mask = u.notna() & i.notna() & t.notna()
-                if valid_mask.sum() >= 2:
-                    p_w = u[valid_mask].values * i[valid_mask].values
-                    i_vals = i[valid_mask].values
-                    dt_raw = np.diff(t[valid_mask].values) / 3600.0
-                    
-                    current_switch_mask = ((i_vals[:-1] == 0) & (i_vals[1:] != 0)) | ((i_vals[:-1] != 0) & (i_vals[1:] == 0))
-                    SWITCH_INTERVAL_SEC = 15
-                    dt_h = np.where(current_switch_mask, SWITCH_INTERVAL_SEC / 3600.0, dt_raw)
-                    
-                    delta_e_wh = (p_w[:-1] + p_w[1:]) / 2.0 * dt_h
-                    res['总用电量(kWh)'] = round(np.sum(delta_e_wh) / 1000.0, 3)
+            # 总用电量（SOC差法：标准电压 × 初始容量 × SOC差）
+            # 公式：E_kWh = Σ (标准电压_V × 容量/SOC / 1000) × (SOC差 / 100)
+            # 按电池id分组计算，换电时重新计算初始容量
+            if '电池id' in group.columns and '容量' in group.columns and '电池SOC' in group.columns and '时间戳' in group.columns:
+                total_energy_kwh = 0.0
+                group['容量_num'] = pd.to_numeric(group['容量'], errors='coerce')
+                group['SOC_num'] = pd.to_numeric(group['电池SOC'], errors='coerce')
+                group['时间戳_num'] = pd.to_numeric(group['时间戳'], errors='coerce')
+
+                for bid, bgroup in group.groupby('电池id'):
+                    bgroup = bgroup.sort_values('时间戳_num').reset_index(drop=True)
+                    if len(bgroup) < 2:
+                        continue
+
+                    bid_int = int(bid) if pd.notna(bid) else -1
+                    std_voltage = battery_voltage_map.get(bid_int, DEFAULT_VOLTAGE)
+
+                    soc_vals = bgroup['SOC_num'].values
+                    cap_vals = bgroup['容量_num'].values
+
+                    full_capacity_ah = None
+                    for j in range(len(bgroup)):
+                        if pd.notna(cap_vals[j]) and pd.notna(soc_vals[j]) and soc_vals[j] > 0:
+                            full_capacity_ah = cap_vals[j] / soc_vals[j]
+                            break
+
+                    if full_capacity_ah is None or full_capacity_ah <= 0:
+                        continue
+
+                    for j in range(1, len(bgroup)):
+                        soc_prev = soc_vals[j - 1]
+                        soc_curr = soc_vals[j]
+                        if pd.isna(soc_prev) or pd.isna(soc_curr):
+                            continue
+                        if soc_curr < soc_prev:
+                            soc_diff = soc_prev - soc_curr
+                            total_energy_kwh += std_voltage * full_capacity_ah * soc_diff / 100.0 / 1000.0
+                        elif soc_curr > soc_prev + 1:
+                            if pd.notna(cap_vals[j]) and soc_curr > 0:
+                                full_capacity_ah = cap_vals[j] / soc_curr
+
+                group = group.drop(columns=['容量_num', 'SOC_num', '时间戳_num'], errors='ignore')
+                res['总用电量(kWh)'] = round(total_energy_kwh, 3)
             
             # 在线状态统计
             if '是否在线' in group.columns:
@@ -914,7 +966,9 @@ def process_fact_layer(target_date: Optional[str] = None, base_path: Optional[st
     
     if base_path is None:
         base_path = BASE_EXPORT_PATH
-    
+
+    battery_voltage_map = load_battery_voltage_map(os.path.join(base_path, EXPORT_FILE_BATTERY_CELL_VOLTAGE))
+
     # 新数据源：直接从 battery_status_YYYY-MM-DD.parquet 读取
     raw_dir = os.path.join(base_path, EXPORT_PATH_BATTERY_STATUS_DAILY)
     output_dir = os.path.join(base_path, EXPORT_PATH_FACT_DAILY)
@@ -963,7 +1017,7 @@ def process_fact_layer(target_date: Optional[str] = None, base_path: Optional[st
         print(f"   ✅ 清洗完成：{len(df_clean):,} 行有效数据")
         
         # 计算合约指标
-        df_result = calc_contract_metrics(df_clean)
+        df_result = calc_contract_metrics(df_clean, battery_voltage_map)
         
         if df_result.empty:
             print("   ❌ 无有效合约指标")

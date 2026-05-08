@@ -35,6 +35,10 @@ EXPORT_FILE_DISTRICT_GEOJSON = get_full_path(f"{GEOJSON_FOLDER}/中国_县.geojs
 CONTRACT_FOLDER = "合约信息"
 EXPORT_FILE_CONTRACT_EARLY = get_full_path(f"{CONTRACT_FOLDER}/4-5用户最早合约时间.csv")
 
+# 电池信息
+BATTERY_INFO_FOLDER = "电池信息"
+EXPORT_FILE_BATTERY_CELL_VOLTAGE = get_full_path(f"{BATTERY_INFO_FOLDER}/电池单体电压.csv")
+
 
 # -------------------------- 3. 输出数据路径 --------------------------
 DATA_OUTPUT_ROOT = get_full_path(f"{USER_BEHAVIOR_FOLDER}")
