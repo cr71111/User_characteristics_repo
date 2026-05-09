@@ -1,7 +1,7 @@
-# 两轮车换电用户特征画像系统 - 项目技术文档 v2.4
+# 两轮车换电用户特征画像系统 - 项目技术文档 v2.5
 
-> **最后更新:** 2026-05-08  
-> **代码版本:** v1.7 (用电量计算逻辑重构：SOC差法替代梯形积分)  
+> **最后更新:** 2026-05-09  
+> **代码版本:** v1.8 (用电量计算优化：按电池段首尾SOC差值一次性计算)  
 > **项目路径:** `d:\PY代码\用户特征画像\User_characteristics_repo`
 
 ---
@@ -55,6 +55,7 @@
 | v1.2 | 2026-04 | 实现梯形数值积分法计算用电量 |
 | v1.3 | 2026-04 | 月度用电量预估改用出勤率方法 |
 | v1.4 | 2026-04 | 启用EMA自动更新基准线 |
+| **v1.8** | **2026-05-09** | **用电量计算优化：按电池段首尾SOC差值一次性计算，取消逐行累加** |
 | **v1.7** | **2026-05-08** | **用电量计算逻辑重构：SOC差法替代梯形积分 + 离线数据过滤** |
 | **v1.6** | **2026-05-07** | **代码质量重构 + 阈值常量统一 + 逻辑缺陷修复** |
 | **v1.5** | **2026-04-27** | **数据源迁移至Parquet、增量模式优化、清理废弃代码** |
@@ -232,7 +233,7 @@
 - 中心经度, 中心纬度
 ```
 
-##### ③ ⭐ SOC差法计算用电量 (核心算法，v1.7+)
+##### ③ ⭐ SOC差法计算用电量 (核心算法，v1.8优化)
 ```python
 应用位置: calc_contract_metrics() 函数内部
 
@@ -241,17 +242,19 @@
 基于电池SOC变化量计算实际消耗的电量
 
 公式:
-  E_kWh = Σ (标准电压_V × 容量_Ah / SOC / 1000) × (SOC差 / 100)
+  E_kWh = Σ 标准电压_V × (容量_最早 / SOC_最早) / 1000 × (SOC_最早 - SOC_最晚) / 100
 
 其中:
   标准电压_V: 从电池单体电压.csv查表获取 (未匹配则默认60V)
-  容量_Ah:   原始数据中的容量字段
-  SOC:       电池SOC百分比 (0-100)
-  SOC差:     相邻两条记录的SOC下降量
+  容量_最早:  最早时间戳记录的容量字段
+  SOC_最早:   最早时间戳记录的SOC百分比
+  SOC_最晚:   最晚时间戳记录的SOC百分比
 
 物理意义:
-  电池满容量 = 容量 / SOC (Ah)
-  消耗电量 = 标准电压 × 满容量 × SOC下降比例 (kWh)
+  满容量(Ah) = 最早容量 / 最早SOC
+  满容量度数(kWh) = 标准电压 × 满容量 / 1000
+  实际用电比例 = (最早SOC - 最晚SOC) / 100
+  该段耗电量 = 满容量度数 × 实际用电比例
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 代码实现要点:
@@ -262,22 +265,41 @@ def calculate_energy_soc_diff(df, battery_voltage_map):
     
     for bid, bgroup in df.groupby('电池id'):
         bgroup = bgroup.sort_values('时间戳')
+        if len(bgroup) < 2:
+            continue
         
         # 查表获取标准电压
         std_voltage = battery_voltage_map.get(bid, DEFAULT_VOLTAGE)
         
-        # 计算初始满容量 (Ah)
-        full_capacity_ah = 容量 / SOC  # 取第一条有效记录
+        # 取最早和最晚记录
+        first_row = bgroup.iloc[0]
+        last_row = bgroup.iloc[-1]
         
-        # 遍历相邻记录，累加SOC下降对应的电量
-        for j in range(1, len(bgroup)):
-            soc_diff = soc_prev - soc_curr
-            if soc_diff > 0:  # SOC下降
-                total_energy_kwh += std_voltage * full_capacity_ah * soc_diff / 100 / 1000
-            elif soc_diff < -1:  # SOC上升超过1% → 换电，重新计算容量
-                full_capacity_ah = 新容量 / 新SOC
+        first_cap = first_row['容量']
+        first_soc = first_row['SOC']
+        last_soc = last_row['SOC']
+        
+        if first_soc <= 0:
+            continue
+        
+        # 计算满容量和耗电量
+        full_capacity_ah = first_cap / first_soc
+        soc_diff = first_soc - last_soc
+        
+        if soc_diff > 0:
+            total_energy_kwh += std_voltage * full_capacity_ah * soc_diff / 100 / 1000
     
     return total_energy_kwh
+
+计算步骤:
+1. 按合约id分组
+2. 按时间戳排序
+3. 对每段电池id分组：
+   a. 取最早时间戳的容量/SOC → 满容量(Ah)
+   b. 匹配标准电压 → 满容量度数(kWh)
+   c. 取最早和最晚SOC → 用电比例
+   d. 计算该段耗电量
+4. 所有电池段耗电量累加 → 当日总耗电量
 
 优势对比:
 ┌──────────┬──────────────────────┬────────┬────────┐
@@ -292,13 +314,13 @@ def calculate_energy_soc_diff(df, battery_voltage_map):
 ```python
 功能: 按合约ID分组，计算日级指标
 
-新增参数 (v1.7+):
+新增参数 (v1.8):
 - battery_voltage_map: dict, 电池id→标准电压(V)映射表
 
 聚合维度:
 
 【电量消耗指标】
-- 日总用电量(kWh):     SOC差法计算结果 (核心输出, v1.7+)
+- 日总用电量(kWh):     SOC差法计算结果 (核心输出, v1.8优化)
 - 平均功率(kW):        日均功率 = 总用电 / 用电时长
 - 最大功率(kW):        峰值功率
 - 用电时长(h):         有效用电时间累计
@@ -1174,7 +1196,7 @@ print(analyzer.store.load())  # 查看当前基准线
 原始字段 → L1 Fact → L2 Snapshot → L3 Lifecycle → L4 Report
 
 电压(mV), 电流(A), 时间戳
-    ↓ (梯形积分)
+    ↓ (SOC差法)
 日总用电量(kWh), 平均功率(kW), 最大功率(kW)
     ↓ (7天聚合 sum/mean)
 近7d总用电量_kWh, 近7d日均用电量_kWh, 近7d最大功率_kW
@@ -1185,6 +1207,11 @@ user_7d_full.csv, 用户完全体画像.txt
 ```
 
 ### B. 版本更新日志
+
+**v1.8 (2026-05-09)**
+- ✅ 用电量计算优化: 按电池段首尾SOC差值一次性计算，取消逐行累加
+- ✅ 计算逻辑简化: 每段电池id只取最早和最晚时间戳记录，直接计算该段耗电量
+- ✅ 公式更新: `E_kWh = Σ 标准电压 × (容量_最早/SOC_最早) / 1000 × (SOC_最早 - SOC_最晚) / 100`
 
 **v1.7 (2026-05-08)**
 - ✅ 用电量计算重构: 从梯形积分法改为SOC差法，公式 `(标准电压 × 容量/SOC / 1000) × (SOC差 / 100)`

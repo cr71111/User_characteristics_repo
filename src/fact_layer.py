@@ -348,9 +348,9 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
                 res['电池id'] = str(mode_val.iloc[0]) if len(mode_val) > 0 else ''
                 res['使用电池数'] = group['电池id'].nunique()
             
-            # 总用电量（SOC差法：标准电压 × 初始容量 × SOC差）
-            # 公式：E_kWh = Σ (标准电压_V × 容量/SOC / 1000) × (SOC差 / 100)
-            # 按电池id分组计算，换电时重新计算初始容量
+            # 总用电量（SOC差法：标准电压 × 满容量 × SOC差）
+            # 公式：E_kWh = Σ 标准电压_V × (容量/最早SOC) / 1000 × (最早SOC - 最晚SOC) / 100
+            # 按电池id分组，每段取最早和最晚SOC计算耗电量
             if '电池id' in group.columns and '容量' in group.columns and '电池SOC' in group.columns and '时间戳' in group.columns:
                 total_energy_kwh = 0.0
                 group['容量_num'] = pd.to_numeric(group['容量'], errors='coerce')
@@ -365,29 +365,23 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
                     bid_int = int(bid) if pd.notna(bid) else -1
                     std_voltage = battery_voltage_map.get(bid_int, DEFAULT_VOLTAGE)
 
-                    soc_vals = bgroup['SOC_num'].values
-                    cap_vals = bgroup['容量_num'].values
+                    first_row = bgroup.iloc[0]
+                    last_row = bgroup.iloc[-1]
 
-                    full_capacity_ah = None
-                    for j in range(len(bgroup)):
-                        if pd.notna(cap_vals[j]) and pd.notna(soc_vals[j]) and soc_vals[j] > 0:
-                            full_capacity_ah = cap_vals[j] / soc_vals[j]
-                            break
+                    first_cap = first_row['容量_num']
+                    first_soc = first_row['SOC_num']
+                    last_soc = last_row['SOC_num']
 
-                    if full_capacity_ah is None or full_capacity_ah <= 0:
+                    if pd.isna(first_cap) or pd.isna(first_soc) or pd.isna(last_soc):
+                        continue
+                    if first_soc <= 0:
                         continue
 
-                    for j in range(1, len(bgroup)):
-                        soc_prev = soc_vals[j - 1]
-                        soc_curr = soc_vals[j]
-                        if pd.isna(soc_prev) or pd.isna(soc_curr):
-                            continue
-                        if soc_curr < soc_prev:
-                            soc_diff = soc_prev - soc_curr
-                            total_energy_kwh += std_voltage * full_capacity_ah * soc_diff / 100.0 / 1000.0
-                        elif soc_curr > soc_prev + 1:
-                            if pd.notna(cap_vals[j]) and soc_curr > 0:
-                                full_capacity_ah = cap_vals[j] / soc_curr
+                    full_capacity_ah = first_cap / first_soc
+                    soc_diff = first_soc - last_soc
+
+                    if soc_diff > 0:
+                        total_energy_kwh += std_voltage * full_capacity_ah * soc_diff / 100.0 / 1000.0
 
                 group = group.drop(columns=['容量_num', 'SOC_num', '时间戳_num'], errors='ignore')
                 res['总用电量(kWh)'] = round(total_energy_kwh, 3)

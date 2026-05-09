@@ -25,7 +25,6 @@
 ├── src/                        # 核心代码目录
 │   ├── __init__.py
 │   │
-│   ├── raw_ingest.py           # L0: 原始数据摄入层
 │   ├── fact_layer.py           # L1: 客观事实层（合约级日指标）
 │   ├── snapshot_layer.py       # L2: 用户快照层（用户级日聚合）
 │   ├── lifecycle_layer.py      # L3: 生命周期层（7天滚动 + 完全体画像）
@@ -33,6 +32,7 @@
 │   ├── report_layer.py         # L4: 报告生成层
 │   │
 │   ├── dynamic_thresholds.py   # 动态阈值计算引擎
+│   ├── score_common.py         # 公共评分函数（L1/L2共享）
 │   ├── run_pipeline.py         # 流水线主入口（支持5种模式）
 │   └── thresholds_baseline.json # 阈值基准数据
 │
@@ -41,14 +41,13 @@
 │   └── geo.py                  # GPS空间匹配工具（Haversine距离、凸包算法）
 │
 ├── data/                       # 数据输出目录（运行后自动创建）
-│   ├── raw/                    # L0 原始数据（按日期）
 │   ├── fact/daily/             # L1 合约级指标（按日期）
 │   ├── snapshot/               # L2 用户快照
 │   ├── lifecycle/              # L3 7天滚动档案 + 完全体画像
 │   └── reports/                # L4 分析报告
 │
-├── ARCHITECTURE.md             # 架构设计文档
-└── README.md                   # 本文档
+├── PROJECT_LOGIC.md            # 项目技术文档（详细版）
+└── README.md                   # 本文档（快速入门）
 ```
 
 ---
@@ -59,23 +58,22 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        数据流水线 (L0 → L4)                          │
+│                        数据流水线 (L1 → L4)                          │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  原始CSV          合约级日指标        用户级快照       7天滚动档案     报告
-│  (IoT传感器)    →  (Fact Layer)  →  (Snapshot)  →  (Lifecycle)  →  Markdown
+│  原始Parquet       合约级日指标        用户级快照       7天滚动档案     报告
+│  (每日1个)      →  (Fact Layer)  →  (Snapshot)  →  (Lifecycle)  →  Markdown
 │                                                                     │
-│  L0              L1                L2              L3+Score       L4
+│  L1              L2                L3              L3+Score       L4
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 五层架构详解
+### 四层架构详解
 
 | 层级 | 模块 | 输入 | 输出 | 核心职责 |
 |------|------|------|------|----------|
-| **L0** | `raw_ingest.py` | 原始 CSV 文件 | `raw/{date}.parquet` | 原始数据清洗、标准化、按日期归档 |
-| **L1** | `fact_layer.py` | Raw Parquet | `fact/daily/{date}.parquet` | 合约级日指标计算（骑行、电流、温度、SOC等） |
+| **L1** | `fact_layer.py` | Parquet 文件 | `fact/daily/{date}.parquet` | 合约级日指标计算（骑行、电流、温度、SOC等） |
 | **L2** | `snapshot_layer.py` | Fact Parquet | `snapshot/user_daily.parquet` | 用户级日聚合（多合约合并、空间统计） |
 | **L3** | `lifecycle_layer.py` | Snapshot Parquet | `lifecycle/user_7d.parquet` | 7天滚动窗口计算、衍生指标、完全体画像文本 |
 | **L3+** | `score_layer.py` | Lifecycle DataFrame | （内存中） | 动态阈值计算、评分分类、风险标签、策略建议 |
@@ -85,34 +83,40 @@
 
 ## 📊 核心业务逻辑
 
-### 1️⃣ L0 - 原始数据摄入层 (`raw_ingest.py`)
+### 📥 数据源说明
 
-**功能：** 将原始 IoT CSV 数据转换为标准化的 Parquet 格式
+**输入数据:** 每日一个 Parquet 文件  
+**命名规则:** `battery_status_YYYY-MM-DD.parquet`  
+**存储位置:** `{BASE_EXPORT_PATH}/用户行为习惯/用户特征画像/每日用户数据汇总/`
 
-**核心特性：**
-- ✅ **高性能批处理**：8进程并行，每批100文件，支持8000+文件快速处理
-- ✅ **智能文件过滤**：预读前50行提取日期，跳过已有数据的日期（节省90%+ I/O）
-- ✅ **增量处理**：自动检测已存在日期，只处理缺失数据
-- ✅ **数据清洗**：
-  - 在线状态过滤（只保留在线记录）
-  - 中国境内GPS粗过滤（排除异常坐标）
-  - 数值类型转换与标准化
-  - 字段名统一映射
+**原始字段清单:**
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| 统计日期 | date | 数据日期 |
+| 统计时间 | time | 记录时间 |
+| 时间戳 | datetime | 精确时间点 |
+| 用户id | str | 用户唯一标识 |
+| 代理id | str | 代理商ID |
+| 合约id | str | 合约唯一标识 |
+| 电池id | str | 电池唯一标识 |
+| 电压 | float | 实时电压 (0.01V单位) |
+| 电流 | float | 实时电流 (安培) |
+| 容量 | float | 电池容量 |
+| 电池SOC | float | 电量状态百分比 (0-100) |
+| 温度 | float | 电池温度 |
+| 是否在线 | bool | 在线状态 |
+| 纬度 | float | GPS纬度 |
+| 经度 | float | GPS经度 |
+| 速度 | float | 实时速度 |
 
-**输入字段：**
-```
-时间戳, 合约id, 用户id, 纬度, 经度, 电流, 温度, 速度,
-电池SOC, 电池度数, 电池id, 是否在线, 统计日期
-```
-
-**输出：**
-- 路径：`data/raw/{YYYY-MM-DD}.parquet`
-- 格式：Parquet（snappy压缩）
-- 特点：按日期分文件，便于增量处理
+**辅助数据:**
+- 电池规格: `电池单体电压.csv`（电池id → 标准电压映射）
+- 合约信息: `4-5用户最早合约时间.csv`
+- GIS围栏: `中国_省.geojson` / `中国_市.geojson` / `中国_县.geojson`
 
 ---
 
-### 2️⃣ L1 - 客观事实层 (`fact_layer.py`)
+### 1️⃣ L1 - 客观事实层 (`fact_layer.py`)
 
 **功能：** 计算每个合约每天的详细指标（最复杂的计算层）
 
@@ -122,14 +126,14 @@
 ```python
 # 复合条件判定（主骑行 + 辅助骑行）
 main_ride_condition = (
-    相邻距离 >= 最小有效位移 AND
-    0 < 速度 <= 最大有效速度 AND
+    相邻距离 >= 20m AND
+    0 < 速度 <= 100km/h AND
     电流 > -20A
 )
 
-# 平滑处理（3点滑动窗口最大值，消除抖动）
+# 平滑处理（5点滑动窗口最大值，消除抖动）
 骑行状态 = main_ride_condition OR assist_ride_condition
-         → rolling(window=3).max()
+         → rolling(window=5).max()
 ```
 
 #### 📏 空间活动指标
@@ -141,18 +145,47 @@ main_ride_condition = (
 #### ⚡ 电流特征
 - **平均/峰值/标准差/变异系数**
 - **高峰vs平峰电流差异**（午间11-13点 + 晚间17-19点）
-- **超阈值次数**：>60A / >80A / ≥100A（连续3次判定）
+- **超阈值次数**：>60A / >80A / ≥100A（连续2次判定）
 - **超100A累计时长**
+
+#### 🔋 用电量计算（SOC差法，v1.8优化）
+```python
+# 公式：E_kWh = Σ 标准电压_V × (容量_最早 / SOC_最早) / 1000 × (SOC_最早 - SOC_最晚) / 100
+# 按电池id分组，每段只取最早和最晚时间戳记录
+标准电压 = 从电池单体电压.csv加载映射表
+满容量(Ah) = 最早容量 / 最早SOC
+用电比例 = (最早SOC - 最晚SOC) / 100
+该段耗电量 = 标准电压 × 满容量 / 1000 × 用电比例
+```
+
+**计算步骤：**
+1. 按合约id分组，按时间戳排序
+2. 对每段电池id分组：
+   - 取最早时间戳的容量/SOC → 满容量(Ah)
+   - 匹配标准电压 → 满容量度数(kWh)
+   - 取最早和最晚SOC → 用电比例
+   - 计算该段耗电量
+3. 所有电池段耗电量累加 → 当日总耗电量
+
+**优势：**
+- 比梯形积分法更准确，不受传感器采样频率影响
+- 比逐行累加更简洁，避免中间数据噪声干扰
+- 使用电池规格标准电压，避免电压波动误差
+
+#### 📊 数据预处理
+- **离线数据过滤**：剔除 `是否在线=0/否/False` 的记录
+- **数值类型转换**：统一字符串为数值类型
+- **时间戳排序**：确保按时间顺序处理
 
 #### 🔋 电池健康度
 - **SOC指标**：平均值、最低值、<20%时长占比、<10%时长占比
 - **能耗指标**：总用电量(kWh)（SOC差法计算）、百公里电耗
 - **换电次数**：基于电池ID切换检测
 
-##### ⭐ 用电量计算（SOC差法，v1.7+）
+##### ⭐ 用电量计算（SOC差法，v1.8优化）
 ```python
-# 公式：E_kWh = Σ (标准电压_V × 容量/SOC / 1000) × (SOC差 / 100)
-# 按电池id分组，换电时(SOC上升>1%)重新计算初始容量
+# 公式：E_kWh = Σ 标准电压_V × (容量_最早 / SOC_最早) / 1000 × (SOC_最早 - SOC_最晚) / 100
+# 按电池id分组，每段只取最早和最晚时间戳记录
 # 标准电压从 电池单体电压.csv 查表获取，未匹配则默认60V
 ```
 
@@ -172,24 +205,30 @@ main_ride_condition = (
 #### 👤 客户形态判定
 | 形态 | 判定条件 |
 |------|---------|
-| **改装/超速车** | 速度>50km/h 或 电流>24A |
-| **地摊/储能** | 距离<1km 且 速度<3km/h 且 怠速比高 |
-| **专送骑手** | 出勤率高 + 高峰骑行占比高 |
-| **众包骑手** | 中等活跃度 |
-| **标准骑手** | 正常使用模式 |
-| **普通骑手** | 低频使用 |
+| **改装/超速车** | 最大速度≥50km/h 且 骑行平均电流≥24A 且有有效骑行 |
+| **地摊/储能** | 距离<1km 且 均速<3km/h 且 怠速放电比高 且 骑行<0.5h |
+| **专送骑手** | 有效骑行 且 骑行≥4h 且 高峰骑行占比≥30% |
+| **众包骑手** | 有效骑行 且 骑行≥2h 且 高峰骑行占比≥15% |
+| **标准骑手** | 有效骑行 且 行驶≤30km 且 骑行≤2h |
+| **普通骑手** | 有有效骑行但不符合以上标签 |
+| **数据不足** | 无有效骑行数据 |
 
 #### 📊 包月友好评分（100分制）
 ```python
 基础分 = 100
 
 扣分项:
-- 速度扣分: >50km/h(-3), >60km/h(-6), >80km/h(-10)
-- 温度扣分: >55°C(-4), >70°C(-8)
-- 电流扣分: 峰值>P99(-5), >80A(-3/次), >100A(-8/次)
-- SOC扣分: <20%时长占比×50
-- 能耗扣分: 百公里电耗异常(-5)
+- 速度扣分: ≥80km/h(-10), ≥60km/h(-6), ≥50km/h(-3)
+- 温度扣分: ≥70°C(-8), ≥55°C(-4)
+- 电流扣分: 骑行平均电流≥40.4A(-15), ≥32.1A(-10), ≥28.3A(-5), ≥22.3A(-2)
+- 超80A扣分: 每次-1.5分，最多扣8分
+- 超100A扣分: 每次-4分，最多扣12分
+- SOC扣分: <20%时长占比×50，最多扣15分
+- 电耗扣分: >13.8kWh/100km(-12), >12.0kWh/100km(-8)
 - 怠速扣分: 怠速放电比过高(-5)
+
+奖励项:
+- SOC奖励: SOC在40%-80%且无低电量(+3分)
 ```
 
 ---
@@ -349,25 +388,25 @@ user_percentile = (user_avg_cur - baseline_P50) / (baseline_P95 - baseline_P50)
 
 | 标签 | 触发条件 | 说明 |
 |------|----------|------|
-| **暴力放电** | 超100A≥2次 或 累计≥0.5h | 最高优先级 |
+| **暴力放电** | 超100A连续次数≥2 | 最高优先级 |
 | **极端电流** | 最大电流>P99 | 严重警告 |
 | **超保护板电流** | 最大电流>60A | 保护板风险 |
 | **频繁超80A** | 有超80A记录 | 中等风险 |
-| **中高电流频繁** | 超60A>10次 | 轻微提醒 |
 | **持续高耗流** | 平均电流>P95 | 长期高负荷 |
-| **深度亏电** | SOC<10%或最低<10% | 电池损伤风险 |
-| **低电量告警** | SOC<20%时长>0 | 一般提醒 |
-| **电池高温** | 温度>55°C或>70°C | 热失控风险 |
+| **深度亏电** | 最低SOC<10% | 电池损伤风险 |
+| **低SOC告警** | SOC<10%时长>0 | 一般提醒 |
+| **月用电超标** | 月预估用电>150度 | 能耗超标 |
+| **疑似静态储能** | 怠速放电比>80% 且 活动半径<2km | 非移动用电场景 |
 
 #### 用户等级划分
 
-| 等级 | 分数区间 | 典型特征 |
+| 等级 | 判定条件 | 典型特征 |
 |------|----------|----------|
-| **优质用户** | ≥85 | 低电流、高效率、规律使用 |
-| **良好用户** | 70-84 | 轻微偏差，整体健康 |
-| **普通用户** | 55-69 | 正常使用，有改进空间 |
-| **高损耗用户** | 40-54 | 高能耗或频繁深放 |
-| **暴力用户** | <40 或 满足暴力条件 | 严重异常，需关注 |
+| **优质用户** | 评分≥85 | 低电流、高效率、规律使用 |
+| **良好用户** | 70≤评分<85 | 轻微偏差，整体健康 |
+| **普通用户** | 55≤评分<70 | 正常使用，有改进空间 |
+| **高损耗用户** | 40≤评分<55 | 高能耗或频繁深放 |
+| **暴力** | 评分<40 或 超100A连续≥2次 或 最大电流>P99 或 月用电>250度 | 严重异常，需关注 |
 | **观察期** | 新用户(<3天) | 数据不足，暂不评级 |
 | **沉默用户** | 7天无出勤 | 可能流失 |
 
@@ -465,14 +504,10 @@ run_incremental(target_date='2026-04-21')
 #### 方式三：单层调试
 
 ```python
-from src.raw_ingest import ingest_raw_data
 from src.fact_layer import process_fact_layer
 from src.snapshot_layer import process_snapshot_layer
 from src.lifecycle_layer import process_lifecycle_layer
 from src.report_layer import process_report_layer
-
-# 只运行L0
-ingest_raw_data(target_date='2026-04-21')
 
 # 只运行L1
 process_fact_layer(target_date='2026-04-21')
@@ -492,60 +527,56 @@ process_lifecycle_layer(target_date='2026-04-21')
 
 ```python
 # -------------------------- 1. 模式开关 --------------------------
-TEST_MODE = True  # True=测试路径(E:\test), False=正式路径(E:\OneDrive\Powerbi)
+TEST_MODE = False  # True=测试路径, False=正式路径
 
 # -------------------------- 2. 输入路径 --------------------------
-BASE_EXPORT_PATH = r"E:\test"  # 基础路径
+BASE_EXPORT_PATH = r"E:\OneDrive\DataBase\DataBase"  # 基础路径
 
 # 原始数据目录
-BATTERY_STATUS_FOLDER = "基础数据/用户电池情况"
-EXPORT_PATH_BATTERY_STATUS_30D = "{BASE}/前30天-前4天"  # 历史30天数据
-EXPORT_PATH_BATTERY_STATUS_3D = "{BASE}/前3天-昨天"     # 近3天数据
+USER_BEHAVIOR_FOLDER = "用户行为习惯/用户特征画像/每日用户数据汇总"
+BATTERY_STATUS_FOLDER = USER_BEHAVIOR_FOLDER  # 电池状态数据
+
+# 电池信息目录
+BATTERY_INFO_FOLDER = "电池信息"
+EXPORT_FILE_BATTERY_CELL_VOLTAGE = "{BASE}/{BATTERY_INFO_FOLDER}/电池单体电压.csv"
+
+# 合约信息目录
+CONTRACT_FOLDER = "合约信息"
+EXPORT_FILE_CONTRACT_EARLY = "{BASE}/{CONTRACT_FOLDER}/4-5用户最早合约时间.csv"
 
 # GIS围栏数据
-GEOJSON_FOLDER = "基础数据/省市区围栏"
-EXPORT_FILE_PROVINCE_GEOJSON = "{BASE}/中国_省.geojson"
-EXPORT_FILE_CITY_GEOJSON = "{BASE}/中国_市.geojson"
-EXPORT_FILE_DISTRICT_GEOJSON = "{BASE}/中国_县.geojson"
+GEOJSON_FOLDER = "GIS围栏"
+EXPORT_FILE_PROVINCE_GEOJSON = "{BASE}/{GEOJSON_FOLDER}/中国_省.geojson"
+EXPORT_FILE_CITY_GEOJSON = "{BASE}/{GEOJSON_FOLDER}/中国_市.geojson"
+EXPORT_FILE_DISTRICT_GEOJSON = "{BASE}/{GEOJSON_FOLDER}/中国_县.geojson"
 
 # -------------------------- 3. 输出路径 --------------------------
-DATA_OUTPUT_ROOT = "{BASE}/用户行为习惯/用户特征画像/data"
+EXPORT_PATH = "{BASE}/用户行为习惯/用户特征画像/data"
 
-EXPORT_PATH_RAW = "{DATA_ROOT}/raw"                    # L0 输出
-EXPORT_PATH_FACT_DAILY = "{DATA_ROOT}/fact/daily"       # L1 输出
-EXPORT_PATH_SNAPSHOT = "{DATA_ROOT}/snapshot/user_daily.parquet"  # L2 输出
-EXPORT_PATH_LIFECYCLE_7D = "{DATA_ROOT}/lifecycle/user_7d.parquet" # L3 输出
-EXPORT_PATH_REPORTS = "{DATA_ROOT}/reports"              # L4 输出
+EXPORT_PATH_FACT = "{EXPORT_PATH}/fact/daily"       # L1 输出
+EXPORT_PATH_SNAPSHOT = "{EXPORT_PATH}/snapshot/user_daily.parquet"  # L2 输出
+EXPORT_PATH_LIFECYCLE_7D = "{EXPORT_PATH}/lifecycle/user_7d.parquet" # L3 输出
+EXPORT_PATH_REPORTS = "{EXPORT_PATH}/reports"        # L4 输出
 ```
 
-### 关键性能参数（在 `raw_ingest.py` 中）
+### 关键性能参数
 
 ```python
-MAX_WORKERS = 8        # 并行进程数（建议≤CPU核心数）
-BATCH_SIZE = 100       # 每批文件数
-SCAN_ROWS = 50         # 快速扫描时的预读行数
+# fact_layer.py 骑行判定参数
+CURRENT_RIDE_WINDOW = 5          # 骑行状态平滑窗口
+CURRENT_STOP_WINDOW = 5          # 停止状态平滑窗口
+MODIFY_SPEED_THRESHOLD = 50      # 改装判定速度阈值(km/h)
+MODIFY_CURRENT_THRESHOLD = 24    # 改装判定电流阈值(A)
+PROTECTION_BOARD_MAX_CURRENT = 60  # 保护板最大电流(A)
+
+# lifecycle_layer.py 滚动参数
+ROLLING_WINDOW_DAYS = 7          # 滚动窗口天数
+LONG_TERM_OFFLINE_THRESHOLD_DAYS = 7  # 长期离线阈值
 ```
 
 ---
 
 ## 📁 输出文件结构
-
-### L0 - 原始数据层
-
-```
-data/raw/
-├── 2026-03-20.parquet    # 3月20日的原始数据
-├── 2026-03-21.parquet
-├── ...
-└── 2026-04-21.parquet
-```
-
-**特点：**
-- 按日期分文件，便于增量处理
-- 已清洗、标准化
-- Parquet格式，压缩比高（snappy）
-
----
 
 ### L1 - 合约级事实层
 
