@@ -23,7 +23,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from config.config import BASE_EXPORT_PATH, EXPORT_PATH_SNAPSHOT, EXPORT_PATH_LIFECYCLE_7D, EXPORT_FILE_CONTRACT_EARLY
+from config.config import EXPORT_PATH_SNAPSHOT, EXPORT_PATH_LIFECYCLE_7D, EXPORT_FILE_CONTRACT_EARLY
 from dynamic_thresholds import DynamicBatteryAnalyzer
 
 ROLLING_WINDOW_DAYS = 7
@@ -672,7 +672,7 @@ def _generate_full_portrait(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def process_lifecycle_layer(target_date: Optional[str] = None, base_path: str = BASE_EXPORT_PATH) -> str:
+def process_lifecycle_layer(target_date: Optional[str] = None) -> str:
     print("\n" + "=" * 80)
     print("L3 Lifecycle Layer - 用户生命周期层")
     print("=" * 80)

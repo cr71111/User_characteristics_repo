@@ -31,7 +31,7 @@ src_dir = os.path.dirname(__file__)
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
-from config.config import BASE_EXPORT_PATH
+from config.config import DATA_OUTPUT_ROOT
 
 # 使用兼容两种运行方式的导入
 try:
@@ -47,7 +47,7 @@ except ImportError:
     from src.report_layer import process_report_layer
 
 
-def run_full_pipeline(target_date: str = None, base_path: str = BASE_EXPORT_PATH):
+def run_full_pipeline(target_date: str = None):
     """full 模式：清除历史数据 → L1 → L4，全量重建"""
     print("\n" + "=" * 80)
     print("🚀 执行模式: FULL (全量重建)")
@@ -55,12 +55,12 @@ def run_full_pipeline(target_date: str = None, base_path: str = BASE_EXPORT_PATH
 
     start_time = datetime.now()
 
-    # Step 0: 清除历史数据
+    # Step 0: 清除历史数据（使用实际数据目录，而非base_path根目录）
     import shutil
     layers_to_clean = ['fact', 'snapshot', 'lifecycle', 'reports']
     cleaned_count = 0
     for layer in layers_to_clean:
-        layer_dir = os.path.join(base_path, layer)
+        layer_dir = os.path.join(DATA_OUTPUT_ROOT, layer)
         if os.path.exists(layer_dir):
             try:
                 shutil.rmtree(layer_dir)
@@ -74,22 +74,22 @@ def run_full_pipeline(target_date: str = None, base_path: str = BASE_EXPORT_PATH
         print(f"   ✅ 已清除 {cleaned_count} 个历史数据目录，开始全量重算\n")
 
     # L1: Fact层（全量处理所有日期）
-    process_fact_layer(target_date=None, base_path=base_path)
+    process_fact_layer(target_date=None)
 
     # L2: Snapshot层
-    process_snapshot_layer(target_date=None, base_path=base_path)
+    process_snapshot_layer(target_date=None)
 
     # L3: Lifecycle层
-    process_lifecycle_layer(target_date=None, base_path=base_path)
+    process_lifecycle_layer(target_date=None)
 
     # L4: Report层
-    process_report_layer(target_date=None, base_path=base_path)
+    process_report_layer(target_date=None)
 
     elapsed = (datetime.now() - start_time).total_seconds()
     print(f"\n⏱️  全量流水线完成，总耗时: {elapsed:.2f} 秒")
 
 
-def run_incremental(target_date: str = None, base_path: str = BASE_EXPORT_PATH):
+def run_incremental(target_date: str = None):
     """incremental 模式：L1 → L4，仅处理新日期（自动检测缺失日期，排除当天）"""
     print("\n" + "=" * 80)
     print("🚀 执行模式: INCREMENTAL (增量处理)")
@@ -97,28 +97,32 @@ def run_incremental(target_date: str = None, base_path: str = BASE_EXPORT_PATH):
 
     start_time = datetime.now()
 
-    # incremental模式：自动检测缺失日期，不使用指定的target_date
-    # 让fact_layer自行扫描数据源，找出未处理的日期
     if target_date:
         print(f"   ⚠️  注意: incremental模式将忽略--date参数，自动检测所有缺失日期")
 
-    # L1: Fact层（自动跳过已有日期和当天数据）
-    process_fact_layer(target_date=None, base_path=base_path)
+    # L1: Fact层（自动跳过已有日期和当天数据），返回新增日期
+    _, new_dates = process_fact_layer(target_date=None)
 
-    # L2: Snapshot层
-    process_snapshot_layer(target_date=None, base_path=base_path)
+    if not new_dates:
+        print("   ✅ 无新增日期需要处理，流水线结束")
+        return
 
-    # L3: Lifecycle层
-    process_lifecycle_layer(target_date=None, base_path=base_path)
+    print(f"\n   📋 新增日期: {sorted(new_dates)}")
+
+    # L2: Snapshot层（仅处理新增日期）
+    process_snapshot_layer(target_dates=new_dates)
+
+    # L3: Lifecycle层（需要全量快照数据计算7天滚动窗口）
+    process_lifecycle_layer(target_date=None)
 
     # L4: Report层
-    process_report_layer(target_date=None, base_path=base_path)
+    process_report_layer(target_date=None)
 
     elapsed = (datetime.now() - start_time).total_seconds()
     print(f"\n⏱️  增量流水线完成，总耗时: {elapsed:.2f} 秒")
 
 
-def run_refresh(target_date: str = None, base_path: str = BASE_EXPORT_PATH):
+def run_refresh(target_date: str = None):
     """refresh 模式：L2 → L4，调整聚合逻辑后重跑（保留L1数据）"""
     print("\n" + "=" * 80)
     print("🚀 执行模式: REFRESH (刷新聚合)")
@@ -127,19 +131,19 @@ def run_refresh(target_date: str = None, base_path: str = BASE_EXPORT_PATH):
     start_time = datetime.now()
 
     # L2: Snapshot层（重算聚合）
-    process_snapshot_layer(target_date=target_date, base_path=base_path)
+    process_snapshot_layer(target_date=target_date)
 
     # L3: Lifecycle层
-    process_lifecycle_layer(target_date=target_date, base_path=base_path)
+    process_lifecycle_layer(target_date=target_date)
 
     # L4: Report层
-    process_report_layer(target_date=target_date, base_path=base_path)
+    process_report_layer(target_date=target_date)
 
     elapsed = (datetime.now() - start_time).total_seconds()
     print(f"\n⏱️  刷新流水线完成，总耗时: {elapsed:.2f} 秒")
 
 
-def run_recalculate(target_date: str = None, base_path: str = BASE_EXPORT_PATH):
+def run_recalculate(target_date: str = None):
     """recalculate 模式：L3 → L4，调整评级规则后重跑（保留L1-L2数据）"""
     print("\n" + "=" * 80)
     print("🚀 执行模式: RECALCULATE (重新评级)")
@@ -148,16 +152,16 @@ def run_recalculate(target_date: str = None, base_path: str = BASE_EXPORT_PATH):
     start_time = datetime.now()
 
     # L3: Lifecycle层（重新评分和分类）
-    process_lifecycle_layer(target_date=target_date, base_path=base_path)
+    process_lifecycle_layer(target_date=target_date)
 
     # L4: Report层
-    process_report_layer(target_date=target_date, base_path=base_path)
+    process_report_layer(target_date=target_date)
 
     elapsed = (datetime.now() - start_time).total_seconds()
     print(f"\n⏱️  重算流水线完成，总耗时: {elapsed:.2f} 秒")
 
 
-def run_report_only(target_date: str = None, base_path: str = BASE_EXPORT_PATH):
+def run_report_only(target_date: str = None):
     """report_only 模式：L4，仅重新生成报告文件（保留L1-L3数据）"""
     print("\n" + "=" * 80)
     print("🚀 执行模式: REPORT_ONLY (仅报告)")
@@ -166,7 +170,7 @@ def run_report_only(target_date: str = None, base_path: str = BASE_EXPORT_PATH):
     start_time = datetime.now()
 
     # L4: Report层（重新生成报告）
-    process_report_layer(target_date=target_date, base_path=base_path)
+    process_report_layer(target_date=target_date)
 
     elapsed = (datetime.now() - start_time).total_seconds()
     print(f"\n⏱️  报告生成完成，总耗时: {elapsed:.2f} 秒")
@@ -179,7 +183,7 @@ def main():
     parser.add_argument(
         '--mode',
         choices=['full', 'incremental', 'refresh', 'recalculate', 'report_only'],
-        default='full',
+        default='incremental',
         help='执行模式 (默认: incremental)'
     )
     parser.add_argument(
@@ -187,12 +191,6 @@ def main():
         type=str,
         default=None,
         help='目标日期 YYYY-MM-DD (默认: 今天)'
-    )
-    parser.add_argument(
-        '--base-path',
-        type=str,
-        default=BASE_EXPORT_PATH,
-        help='基础导出路径 (默认: 配置文件中的值)'
     )
 
     args = parser.parse_args()
@@ -206,7 +204,7 @@ def main():
     }
 
     pipeline_func = mode_map[args.mode]
-    pipeline_func(target_date=args.date, base_path=args.base_path)
+    pipeline_func(target_date=args.date)
 
 
 if __name__ == "__main__":

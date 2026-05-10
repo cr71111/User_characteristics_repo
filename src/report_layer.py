@@ -20,7 +20,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from config.config import BASE_EXPORT_PATH, EXPORT_PATH_LIFECYCLE_7D, EXPORT_PATH_REPORTS
+from config.config import EXPORT_PATH_LIFECYCLE_7D, EXPORT_PATH_REPORTS
 
 
 def generate_user_detail(df: pd.DataFrame, output_dir: str) -> str:
@@ -189,13 +189,12 @@ def generate_attendance_detail(df: pd.DataFrame, output_dir: str) -> str:
     return output_path
 
 
-def process_report_layer(target_date: Optional[str] = None, base_path: str = BASE_EXPORT_PATH) -> str:
+def process_report_layer(target_date: Optional[str] = None) -> str:
     """
     L4 Report Layer 主入口
 
     Args:
         target_date: 目标日期 YYYY-MM-DD，用于报告目录命名
-        base_path: 基础导出路径
 
     Returns:
         str: 报告目录路径

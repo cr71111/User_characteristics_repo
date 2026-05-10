@@ -1,7 +1,7 @@
-# 两轮车换电用户特征画像系统 - 项目技术文档 v2.5
+# 两轮车换电用户特征画像系统 - 项目技术文档 v2.6
 
-> **最后更新:** 2026-05-09  
-> **代码版本:** v1.8 (用电量计算优化：按电池段首尾SOC差值一次性计算)  
+> **最后更新:** 2026-05-10  
+> **代码版本:** v1.9 (代码审查与BUG修复：评分逻辑统一、返回类型修复、默认模式修正)  
 > **项目路径:** `d:\PY代码\用户特征画像\User_characteristics_repo`
 
 ---
@@ -55,6 +55,7 @@
 | v1.2 | 2026-04 | 实现梯形数值积分法计算用电量 |
 | v1.3 | 2026-04 | 月度用电量预估改用出勤率方法 |
 | v1.4 | 2026-04 | 启用EMA自动更新基准线 |
+| **v1.9** | **2026-05-10** | **代码审查与BUG修复：评分逻辑统一、返回类型修复、默认模式修正** |
 | **v1.8** | **2026-05-09** | **用电量计算优化：按电池段首尾SOC差值一次性计算，取消逐行累加** |
 | **v1.7** | **2026-05-08** | **用电量计算逻辑重构：SOC差法替代梯形积分 + 离线数据过滤** |
 | **v1.6** | **2026-05-07** | **代码质量重构 + 阈值常量统一 + 逻辑缺陷修复** |
@@ -145,7 +146,7 @@
 ### 3.1 L1: Fact Layer (客观事实层)
 
 **📁 文件位置:** [src/fact_layer.py](src/fact_layer.py)  
-**⚙️ 入口函数:** `process_fact_layer(target_date, base_path)`  
+**⚙️ 入口函数:** `process_fact_layer(target_date)`  
 **🎯 职责:** 将每日原始数据转换为结构化的合约日级指标
 
 #### 3.1.1 数据输入
@@ -363,7 +364,7 @@ def calculate_energy_soc_diff(df, battery_voltage_map):
 ### 3.2 L2: Snapshot Layer (用户日级快照层)
 
 **📁 文件位置:** [src/snapshot_layer.py](src/snapshot_layer.py)  
-**⚙️ 入口函数:** `process_snapshot_layer(target_date, base_path)`  
+**⚙️ 入口函数:** `process_snapshot_layer(target_date)`  
 **🎯 职责:** 将多日的Fact数据聚合成用户维度的7天滚动窗口快照
 
 #### 3.2.1 数据输入
@@ -475,7 +476,7 @@ def calculate_energy_soc_diff(df, battery_voltage_map):
 ### 3.3 L3: Lifecycle Layer (用户生命周期层)
 
 **📁 文件位置:** [src/lifecycle_layer.py](src/lifecycle_layer.py)  
-**⚙️ 入口函数:** `process_lifecycle_layer(target_date, base_path)`  
+**⚙️ 入口函数:** `process_lifecycle_layer(target_date)`  
 **🎯 职责:** 用户评分分类 + 风险标签生成 + 完整画像文本 + 合约信息整合
 
 #### 3.3.1 数据输入
@@ -663,7 +664,7 @@ STRATEGY_MAP = {
 ### 3.4 L4: Report Layer (报告输出层)
 
 **📁 文件位置:** [src/report_layer.py](src/report_layer.py)  
-**⚙️ 入口函数:** `process_report_layer(target_date, base_path)`  
+**⚙️ 入口函数:** `process_report_layer(target_date)`  
 **🎯 职责:** 将Lifecycle层数据导出为多种业务友好的报告格式
 
 #### 3.4.1 输出报告清单
@@ -899,7 +900,6 @@ STRATEGY_MAP = {
                         执行模式 (默认: incremental)
   --date DATE           目标日期 YYYY-MM-DD (默认: 今天)
                         注: incremental模式会忽略此参数
-  --base-path PATH      基础导出路径 (默认: 配置文件中定义)
 
 示例:
   # 日常增量处理 (最常用)
@@ -1208,6 +1208,14 @@ user_7d_full.csv, 用户完全体画像.txt
 
 ### B. 版本更新日志
 
+**v1.9 (2026-05-10)**
+- ✅ BUG修复: `run_pipeline.py` --mode 默认值从 `full` 修正为 `incremental`，与 help 文本一致
+- ✅ BUG修复: `fact_layer.py` `process_fact_layer()` 两处早期 `return {}` 改为 `return {}, set()`，避免调用方解包失败
+- ✅ 代码重构: `dynamic_thresholds.py` `score_and_classify()` 方法委托给 `score_layer.score_and_classify()`，消除 ~400 行重复代码
+- ✅ 维护性提升: 评分逻辑统一由 `score_layer.py` 维护，避免两处逻辑不一致的风险
+- ✅ 移除 `base_path` 参数: 所有层函数不再接受 `base_path` 参数，统一使用 `config.py` 中的路径配置
+- ✅ 增量模式优化: L2 Snapshot 层支持仅处理新增日期，避免全量重算
+
 **v1.8 (2026-05-09)**
 - ✅ 用电量计算优化: 按电池段首尾SOC差值一次性计算，取消逐行累加
 - ✅ 计算逻辑简化: 每段电池id只取最早和最晚时间戳记录，直接计算该段耗电量
@@ -1273,5 +1281,5 @@ user_7d_full.csv, 用户完全体画像.txt
 ---
 
 > **文档维护说明:**  
-> 本文档随项目迭代同步更新，最后更新时间为 2026-04-27。  
+> 本文档随项目迭代同步更新，最后更新时间为 2026-05-10。  
 > 如发现文档与代码不一致，请以代码实现为准，并及时更新本文档。

@@ -26,7 +26,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from config.config import BASE_EXPORT_PATH, EXPORT_PATH_FACT_DAILY, EXPORT_PATH_BATTERY_STATUS_DAILY, EXPORT_FILE_BATTERY_CELL_VOLTAGE
+from config.config import EXPORT_PATH_FACT_DAILY, EXPORT_PATH_BATTERY_STATUS_DAILY, EXPORT_FILE_BATTERY_CELL_VOLTAGE
 from utils.geo import batch_gps_to_region, haversine
 from score_common import (
     calc_monthly_score_v2, determine_user_level_v2,
@@ -44,7 +44,7 @@ COLLECTION_CYCLE_MIN = 5
 MAX_SPEED_KMH = 120
 DRIFT_SPEED_THRESHOLD = 150
 RADIUS_QUANTILES = [0.9, 0.95]
-MIN_VALID_DISPLACEMENT_M = 20
+MIN_VALID_DISPLACEMENT_M = 1
 STOP_SMOOTH_WINDOW = 5
 MIN_RIDING_DURATION_MIN = 3
 MAX_TRIP_GAP_MIN = 60
@@ -65,7 +65,7 @@ MODIFY_CURRENT_THRESHOLD = 24
 
 # 数据有效性阈值（严格按照旧脚本）
 MAX_VALID_CURRENT = 150.0
-MAX_VALID_SPEED = 100.0
+MAX_VALID_SPEED = 120.0
 MIN_VALID_CURRENT = 0.1
 
 # 电流异常判定阈值（严格按照旧脚本）
@@ -302,36 +302,17 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             group['动态距离阈值_km'] = (MAX_SPEED_KMH * group['时间间隔_min'] / 60) * 1.1
             group['有效位移'] = (group['相邻距离_km'] <= group['动态距离阈值_km']) & (group['相邻距离_km'] > 0)
 
-            # 骑行判定逻辑
-            main_ride_condition = (
-                (group['相邻距离_m'] >= MIN_VALID_DISPLACEMENT_M) &
-                (group['速度'].fillna(0) > 0) &
-                (group['速度'].fillna(0) <= MAX_VALID_SPEED) &
-                (group['电流'] > -20)
-            )
-            group['初始骑行状态'] = main_ride_condition.rolling(
-                window=STOP_SMOOTH_WINDOW, 
-                min_periods=1
-            ).max().fillna(0).astype(int)
-
-            assist_ride_condition = (
-                (group['相邻距离_m'] < MIN_VALID_DISPLACEMENT_M) &
-                (group['速度'].fillna(0) >= 0) &
-                (group['速度'].fillna(0) <= 5) &
-                (group['电流_骑行判定用'] > 0) &
-                (group['初始骑行状态'].shift(1).fillna(0) == 1)
-            )
-            group['核心有效'] = main_ride_condition | assist_ride_condition
-            group['骑行状态'] = group['核心有效'].rolling(
+            # 骑行判定逻辑：GPS有变动即算骑行（有效位移已过滤漂移）
+            main_ride_condition = group['有效位移']
+            group['骑行状态'] = main_ride_condition.rolling(
                 window=STOP_SMOOTH_WINDOW, 
                 min_periods=1,
                 center=True
             ).max().fillna(0).astype(int)
             group['有效里程_km'] = group['相邻距离_km'].where(
-                (group['骑行状态'] == 1) & group['有效位移'] & main_ride_condition, 
+                (group['骑行状态'] == 1) & group['有效位移'], 
                 0.0
             )
-            group = group.drop(columns=['初始骑行状态'])
 
             # -------------------------- 0. 原始维度字段统计（备份用）--------------------------
             res['最早记录时间戳'] = int(group['时间戳'].iloc[0]) if len(group) > 0 else 0
@@ -575,7 +556,7 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
 
             # -------------------------- 7. 放电时长计算 --------------------------
             current_col_for_discharge = '电流_放电统计用' if '电流_放电统计用' in group.columns else '电流'
-            group['放电状态'] = (group[current_col_for_discharge] > 0).rolling(
+            group['放电状态'] = ((group[current_col_for_discharge] > 0) | (group['骑行状态'] == 1)).rolling(
                 window=STOP_SMOOTH_WINDOW, 
                 min_periods=1,
                 center=True
@@ -586,12 +567,16 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
                 group['放电块ID'] = (group['放电状态'] != group['放电状态'].shift()).cumsum()
                 for block_id, block_group in group[group['放电状态'] == 1].groupby('放电块ID'):
                     if len(block_group) >= 1:
-                        duration_h = len(block_group) * COLLECTION_CYCLE_MIN / 60
+                        duration_h = (block_group['时间戳'].max() - block_group['时间戳'].min()) / 3600
                         if duration_h >= 1/60:
                             total_discharge_hours += duration_h
             else:
-                valid_discharge_mask = group[current_col_for_discharge] > 0
-                total_discharge_hours = valid_discharge_mask.sum() * COLLECTION_CYCLE_MIN / 60
+                valid_discharge_mask = (group[current_col_for_discharge] > 0) | (group['骑行状态'] == 1)
+                if valid_discharge_mask.any():
+                    discharge_group = group[valid_discharge_mask].copy()
+                    discharge_group['_discharge_block'] = ((discharge_group['时间戳'].diff() > MAX_TRIP_GAP_MIN * 60).cumsum())
+                    for _, block in discharge_group.groupby('_discharge_block'):
+                        total_discharge_hours += (block['时间戳'].max() - block['时间戳'].min()) / 3600
             
             total_discharge_hours = round(total_discharge_hours, 2)
             res['总放电时长(小时)'] = total_discharge_hours
@@ -682,7 +667,16 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
                 riding_current_data['电流≥100A'] = (riding_current_data['电流'] >= OVER_CURRENT_THRESHOLD).astype(int)
                 riding_current_data['连续超100A'] = riding_current_data['电流≥100A'].rolling(window=OVER_CURRENT_CONTINUOUS, min_periods=OVER_CURRENT_CONTINUOUS).sum()
                 res['超100A连续次数'] = (riding_current_data['连续超100A'] >= OVER_CURRENT_CONTINUOUS).sum()
-                res['超100A累计时长_h'] = round((riding_current_data['电流≥100A'].sum() * COLLECTION_CYCLE_MIN) / 60, 2)
+                over100_mask = riding_current_data['电流≥100A'] == 1
+                if over100_mask.any():
+                    over100_data = riding_current_data[over100_mask]
+                    over100_data['_over100_block'] = ((over100_data['时间戳'].diff() > MAX_TRIP_GAP_MIN * 60).cumsum())
+                    total_over100_h = 0.0
+                    for _, block in over100_data.groupby('_over100_block'):
+                        total_over100_h += (block['时间戳'].max() - block['时间戳'].min()) / 3600
+                    res['超100A累计时长_h'] = round(total_over100_h, 2)
+                else:
+                    res['超100A累计时长_h'] = 0.0
 
             # -------------------------- 10. 温度指标计算 --------------------------
             temp_data = group[['温度', '时间戳']].dropna(subset=['温度'])
@@ -719,6 +713,8 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             swap_hours = []
             if '电池id' in group.columns:
                 swap_mask = group['电池切换标记'] == 1
+                if swap_mask.iloc[0]:
+                    swap_mask.iloc[0] = False
                 if swap_mask.sum() > 0:
                     swap_times = pd.to_datetime(
                         group.loc[swap_mask, '时间戳'], unit='s', errors='coerce'
@@ -952,38 +948,34 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
 # ==============================================================================
 # 主处理函数
 # ==============================================================================
-def process_fact_layer(target_date: Optional[str] = None, base_path: Optional[str] = None):
+def process_fact_layer(target_date: Optional[str] = None):
     """处理fact层数据"""
     print("\n" + "="*80)
     print("L1 Fact Layer - 客观事实层")
     print("="*80)
-    
-    if base_path is None:
-        base_path = BASE_EXPORT_PATH
 
-    battery_voltage_map = load_battery_voltage_map(os.path.join(base_path, EXPORT_FILE_BATTERY_CELL_VOLTAGE))
+    battery_voltage_map = load_battery_voltage_map(EXPORT_FILE_BATTERY_CELL_VOLTAGE)
 
-    # 新数据源：直接从 battery_status_YYYY-MM-DD.parquet 读取
-    raw_dir = os.path.join(base_path, EXPORT_PATH_BATTERY_STATUS_DAILY)
-    output_dir = os.path.join(base_path, EXPORT_PATH_FACT_DAILY)
+    raw_dir = EXPORT_PATH_BATTERY_STATUS_DAILY
+    output_dir = EXPORT_PATH_FACT_DAILY
     os.makedirs(output_dir, exist_ok=True)
     
     raw_files = sorted([f for f in os.listdir(raw_dir) if f.startswith('battery_status_') and f.endswith('.parquet')])
     if not raw_files:
         print("❌ 未找到原始数据文件")
-        return {}
+        return {}, set()
     
     # 过滤掉当天的数据（只计算到昨日）
     today_str = datetime.now().strftime('%Y-%m-%d')
     raw_files = [f for f in raw_files if f.replace('battery_status_', '').replace('.parquet', '') < today_str]
     if not raw_files:
         print("❌ 未找到需要处理的数据（当天数据已过滤）")
-        return {}
+        return {}, set()
     
     processed = {}
+    new_dates = set()
     
     for filename in raw_files:
-        # 从文件名提取日期：battery_status_YYYY-MM-DD.parquet -> YYYY-MM-DD
         date_str = filename.replace('battery_status_', '').replace('.parquet', '')
         
         if target_date and date_str != target_date:
@@ -994,6 +986,8 @@ def process_fact_layer(target_date: Optional[str] = None, base_path: Optional[st
             print(f"⏭️  L1 已存在，跳过: {output_path}")
             processed[date_str] = output_path
             continue
+        
+        new_dates.add(date_str)
         
         print(f"\n📊 处理日期: {date_str}")
         raw_path = os.path.join(raw_dir, filename)
@@ -1028,8 +1022,8 @@ def process_fact_layer(target_date: Optional[str] = None, base_path: Optional[st
         print(f"   ✅ L1 保存: {output_path} ({len(df_result):,} 个合约日记录)")
         processed[date_str] = output_path
     
-    print(f"\n✅ L1 Fact Layer 完成，处理 {len(processed)} 个日期")
-    return processed
+    print(f"\n✅ L1 Fact Layer 完成，处理 {len(processed)} 个日期（新增 {len(new_dates)} 个）")
+    return processed, new_dates
 
 
 if __name__ == "__main__":

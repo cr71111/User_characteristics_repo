@@ -21,7 +21,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from config.config import BASE_EXPORT_PATH, EXPORT_PATH_FACT_DAILY, EXPORT_PATH_SNAPSHOT
+from config.config import EXPORT_PATH_FACT_DAILY, EXPORT_PATH_SNAPSHOT
 from score_common import (
     SOC_CRITICAL_RATIO_DEDUCT_THRESHOLD, SOC_LOW_RATIO_DEDUCT_THRESHOLD,
     SOC_OPTIMAL_LOWER, SOC_OPTIMAL_UPPER, SOC_OPTIMAL_BONUS,
@@ -222,13 +222,13 @@ def append_to_snapshot(df_new: pd.DataFrame, path: str) -> None:
     pq.write_table(table_new, path, compression='zstd')
 
 
-def process_snapshot_layer(target_date: Optional[str] = None, base_path: str = BASE_EXPORT_PATH) -> str:
+def process_snapshot_layer(target_date: Optional[str] = None, target_dates: Optional[set] = None) -> str:
     """
     L2 Snapshot Layer 主入口
 
     Args:
         target_date: 目标日期 YYYY-MM-DD，None 则处理所有日期
-        base_path: 基础导出路径
+        target_dates: 目标日期集合（增量模式），优先级高于 target_date
 
     Returns:
         str: 快照文件路径
@@ -254,6 +254,8 @@ def process_snapshot_layer(target_date: Optional[str] = None, base_path: str = B
 
     for fact_file in fact_files:
         date_str = fact_file.replace('.parquet', '')
+        if target_dates and date_str not in target_dates:
+            continue
         if target_date and date_str != target_date:
             continue
 
@@ -293,11 +295,11 @@ def process_snapshot_layer(target_date: Optional[str] = None, base_path: str = B
         df_agg['当日总骑行次数'] = g['骑行次数'].sum()
         df_agg['当日总换电次数'] = g['换电次数'].sum()
         
-        df_agg['单合约日均行驶里程_km'] = df_agg['当日总行驶距离_km'].round(2)
-        df_agg['单合约日均骑行时长_h'] = df_agg['当日总骑行时长_h'].round(2)
-        df_agg['单合约日均放电时长_h'] = df_agg['当日总放电时长_h'].round(2)
-        df_agg['单合约日均怠速放电_h'] = df_agg['当日总怠速放电时长_h'].round(2)
-        df_agg['单合约日均用电量_kWh'] = df_agg['当日总用电量_kWh'].round(2)
+        df_agg['单合约日均行驶里程_km'] = (df_agg['当日总行驶距离_km'] / df_agg['关联合约数'].clip(lower=1)).round(2)
+        df_agg['单合约日均骑行时长_h'] = (df_agg['当日总骑行时长_h'] / df_agg['关联合约数'].clip(lower=1)).round(2)
+        df_agg['单合约日均放电时长_h'] = (df_agg['当日总放电时长_h'] / df_agg['关联合约数'].clip(lower=1)).round(2)
+        df_agg['单合约日均怠速放电_h'] = (df_agg['当日总怠速放电时长_h'] / df_agg['关联合约数'].clip(lower=1)).round(2)
+        df_agg['单合约日均用电量_kWh'] = (df_agg['当日总用电量_kWh'] / df_agg['关联合约数'].clip(lower=1)).round(2)
         
         df_agg['午间高峰长时骑行总次数'] = g['午间高峰长时骑行次数'].sum()
         df_agg['晚间高峰长时骑行总次数'] = g['晚间高峰长时骑行次数'].sum()

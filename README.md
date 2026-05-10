@@ -778,7 +778,19 @@ python src/run_pipeline.py --mode incremental
 
 ## 📈 版本历史
 
-### v2.0 (当前版本)
+### v2.1 (当前版本 - 2026-05-10)
+
+**BUG修复：**
+- 🐛 修复 `run_pipeline.py` --mode 默认值与 help 文本不一致（`full` → `incremental`）
+- 🐛 修复 `fact_layer.py` `process_fact_layer()` 早期返回类型不一致，避免解包失败
+- 🐛 修复 `dynamic_thresholds.py` 与 `score_layer.py` 评分逻辑重复（~400行），统一委托
+
+**优化改进：**
+- 🔄 移除所有层的 `base_path` 参数，统一使用 `config.py` 路径配置
+- 🚀 L2 Snapshot 层增量模式仅处理新增日期，避免全量重算
+- 📝 评分逻辑统一由 `score_layer.py` 维护，消除维护风险
+
+### v2.0
 
 **新增功能：**
 - ✅ 完全体画像系统（9维度结构化文本）
