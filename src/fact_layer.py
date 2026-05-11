@@ -510,9 +510,7 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             total_riding_count = group[group['骑行状态'] == 1].shape[0]
             peak_riding_count = group[(group['骑行状态'] == 1) & (group['是否午间高峰'] | group['是否晚间高峰'])].shape[0]
             peak_riding_ratio = round(peak_riding_count / total_riding_count, 2) if total_riding_count > 0 else 0
-            is_work_day = 1 if total_riding_hours >= 0.5 else 0
             res['高峰骑行占比'] = peak_riding_ratio
-            res['当日是否出勤'] = is_work_day
 
             # -------------------------- 6. 速度指标计算 --------------------------
             riding_speed_data = group.loc[group['有效里程_km'] > 0, ['速度', '时间戳']].dropna(subset=['速度'])
@@ -580,6 +578,10 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             
             total_discharge_hours = round(total_discharge_hours, 2)
             res['总放电时长(小时)'] = total_discharge_hours
+
+            # 出勤判定：骑行>=0.5h 或 放电>=0.5h（覆盖地摊/储能等无骑行但有放电的场景）
+            is_work_day = 1 if (total_riding_hours >= 0.5 or total_discharge_hours >= 0.5) else 0
+            res['当日是否出勤'] = is_work_day
 
             # -------------------------- 8. 怠速放电时长计算 --------------------------
             idle_discharge_hours = max(0.0, total_discharge_hours - total_riding_hours)
@@ -779,13 +781,15 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
                 res['工作时长覆盖(小时)'] = round(work_span_hours, 1)
 
                 # 骑行时刻分布（使用有效里程>0的点，与行驶距离逻辑一致）
-                riding_hours = pd.to_datetime(
+                riding_times = pd.to_datetime(
                     group.loc[group['有效里程_km'] > 0, '时间戳'], unit='s', errors='coerce'
-                ).dt.hour.dropna()
-                if len(riding_hours) > 0:
-                    res['最早骑行时刻_h'] = int(riding_hours.min())
-                    res['最晚骑行时刻_h'] = int(riding_hours.max())
+                ).dropna()
+                if len(riding_times) > 0:
+                    riding_hours_frac = riding_times.dt.hour + riding_times.dt.minute / 60.0
+                    res['最早骑行时刻_h'] = round(riding_hours_frac.min(), 2)
+                    res['最晚骑行时刻_h'] = round(riding_hours_frac.max(), 2)
 
+                    riding_hours = riding_times.dt.hour
                     main_hour = riding_hours.mode().iloc[0] if len(riding_hours.mode()) > 0 else -1
                     if main_hour in NOON_PEAK_HOURS:
                         res['主要骑行时段'] = '午间高峰'

@@ -55,23 +55,12 @@ def run_full_pipeline(target_date: str = None):
 
     start_time = datetime.now()
 
-    # Step 0: 清除历史数据（使用实际数据目录，而非base_path根目录）
-    import shutil
     layers_to_clean = ['fact', 'snapshot', 'lifecycle', 'reports']
-    cleaned_count = 0
     for layer in layers_to_clean:
         layer_dir = os.path.join(DATA_OUTPUT_ROOT, layer)
-        if os.path.exists(layer_dir):
-            try:
-                shutil.rmtree(layer_dir)
-                os.makedirs(layer_dir, exist_ok=True)
-                cleaned_count += 1
-                print(f"   🗑️  已清除 {layer}/ 目录")
-            except Exception as e:
-                print(f"   ⚠️ 清除 {layer}/ 失败: {e}")
-    
-    if cleaned_count > 0:
-        print(f"   ✅ 已清除 {cleaned_count} 个历史数据目录，开始全量重算\n")
+        _clear_directory(layer_dir, layer)
+
+    print()
 
     # L1: Fact层（全量处理所有日期）
     process_fact_layer(target_date=None)
@@ -176,6 +165,89 @@ def run_report_only(target_date: str = None):
     print(f"\n⏱️  报告生成完成，总耗时: {elapsed:.2f} 秒")
 
 
+def _clear_directory(dir_path: str, dir_label: str) -> bool:
+    """清除目录，处理 OneDrive 等文件锁问题"""
+    import shutil
+    import time
+
+    if not os.path.exists(dir_path):
+        return True
+
+    try:
+        shutil.rmtree(dir_path)
+        os.makedirs(dir_path, exist_ok=True)
+        print(f"   🗑️  已清除 {dir_label}/ 目录")
+        return True
+    except (PermissionError, OSError):
+        pass
+
+    deleted = 0
+    failed = 0
+    for root, dirs, files in os.walk(dir_path, topdown=False):
+        for f in files:
+            fp = os.path.join(root, f)
+            try:
+                os.remove(fp)
+                deleted += 1
+            except (PermissionError, OSError):
+                failed += 1
+        for d in dirs:
+            dp = os.path.join(root, d)
+            try:
+                os.rmdir(dp)
+            except (PermissionError, OSError):
+                pass
+
+    if failed > 0:
+        print(f"   ⚠️ {dir_label}/ 目录: 已删 {deleted} 个文件, {failed} 个被 OneDrive 锁定（将覆盖写入）")
+    else:
+        print(f"   🗑️  已清除 {dir_label}/ 目录 ({deleted} 个文件)")
+    return failed == 0
+
+
+def run_from_layer(layer: str, target_date: str = None):
+    """从指定层开始重建：清除该层及下游数据，然后重算"""
+
+    layer_order = ['L1', 'L2', 'L3', 'L4']
+    layer_dirs = {
+        'L1': 'fact',
+        'L2': 'snapshot',
+        'L3': 'lifecycle',
+        'L4': 'reports',
+    }
+
+    if layer not in layer_order:
+        print(f"❌ 无效层级: {layer}，可选: {layer_order}")
+        return
+
+    start_idx = layer_order.index(layer)
+    print("\n" + "=" * 80)
+    print(f"🚀 执行模式: FROM_{layer} (从 {layer} 层开始重建)")
+    print("=" * 80)
+
+    start_time = datetime.now()
+
+    for i in range(start_idx, len(layer_order)):
+        l = layer_order[i]
+        dir_name = layer_dirs[l]
+        dir_path = os.path.join(DATA_OUTPUT_ROOT, dir_name)
+        _clear_directory(dir_path, dir_name)
+
+    print()
+
+    if start_idx <= 0:
+        process_fact_layer(target_date=None)
+    if start_idx <= 1:
+        process_snapshot_layer(target_date=None)
+    if start_idx <= 2:
+        process_lifecycle_layer(target_date=None)
+    if start_idx <= 3:
+        process_report_layer(target_date=None)
+
+    elapsed = (datetime.now() - start_time).total_seconds()
+    print(f"\n⏱️  从 {layer} 层重建完成，总耗时: {elapsed:.2f} 秒")
+
+
 
 
 def main():
@@ -192,8 +264,19 @@ def main():
         default=None,
         help='目标日期 YYYY-MM-DD (默认: 今天)'
     )
+    parser.add_argument(
+        '--layer',
+        type=str,
+        default=None,
+        choices=['L1', 'L2', 'L3', 'L4'],
+        help='从指定层开始重建，清除该层及下游数据后重算 (L1=全量, L2=跳过Fact, L3=跳过Fact+Snapshot, L4=仅报告)'
+    )
 
     args = parser.parse_args()
+
+    if args.layer:
+        run_from_layer(args.layer, target_date=args.date)
+        return
 
     mode_map = {
         'full': run_full_pipeline,

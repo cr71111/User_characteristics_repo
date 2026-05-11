@@ -283,7 +283,6 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
         ('R90活动半径_km', '近7d_R90活动半径_km'),
         ('最大凸包覆盖面积_km2', '近7d凸包覆盖面积_km2'),
         ('最大单次出行距离_km', '近7d最大单次出行距离_km'),
-        ('最晚骑行时刻_h', '近7d最晚骑行时刻_h'),
     ]
     for raw_col, roll_col in max_cols:
         if raw_col in group.columns:
@@ -292,9 +291,14 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
         else:
             res[roll_col] = 0
 
+    if '最晚骑行时刻_h' in group.columns:
+        valid = group['最晚骑行时刻_h'][group['最晚骑行时刻_h'] >= 0]
+        res['近7d最晚骑行时刻_h'] = round(valid.max(), 2) if len(valid) > 0 else -1
+    else:
+        res['近7d最晚骑行时刻_h'] = -1
+
     min_cols = [
         ('当日最低SOC', '近7d最低SOC'),
-        ('最早骑行时刻_h', '近7d最早骑行时刻_h'),
     ]
     for raw_col, roll_col in min_cols:
         if raw_col in group.columns:
@@ -302,6 +306,12 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
             res[roll_col] = round(val, 2) if pd.notna(val) else 100
         else:
             res[roll_col] = 100
+
+    if '最早骑行时刻_h' in group.columns:
+        valid = group['最早骑行时刻_h'][group['最早骑行时刻_h'] >= 0]
+        res['近7d最早骑行时刻_h'] = round(valid.min(), 2) if len(valid) > 0 else -1
+    else:
+        res['近7d最早骑行时刻_h'] = -1
 
     cumulative_and_avg_cols = [
         ('当日总骑行次数', '近7d总骑行次数', '近7d日均骑行次数'),
@@ -579,9 +589,19 @@ def _generate_full_portrait(df: pd.DataFrame) -> pd.DataFrame:
         attend   = row.get('近7d出勤率', 0)
         ride_h   = row.get('近7d单合约日均骑行时长_h', 0)
         if earliest >= 0 and latest >= 0:
+            def _fmt_hm(h):
+                hh = int(h)
+                mm = int(round((h - hh) * 60))
+                return f"{hh:02d}:{mm:02d}"
             parts.append(
                 f"【骑行时间】惯用时段:{pattern} | "
-                f"首次上路:{earliest:02d}:xx / 最晚收车:{latest:02d}:xx | "
+                f"首次上路:{_fmt_hm(earliest)} / 最晚收车:{_fmt_hm(latest)} | "
+                f"出勤率:{attend:.0%} | 日均骑行:{ride_h:.1f}h"
+            )
+        else:
+            parts.append(
+                f"【骑行时间】惯用时段:无 | "
+                f"首次上路:无 / 最晚收车:无 | "
                 f"出勤率:{attend:.0%} | 日均骑行:{ride_h:.1f}h"
             )
 
