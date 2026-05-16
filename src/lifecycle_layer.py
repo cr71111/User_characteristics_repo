@@ -219,12 +219,20 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
     group = group[group['days_ago'].between(0, ROLLING_WINDOW_DAYS - 1)].copy()
     group['weight'] = group['days_ago'].apply(lambda x: ROLLING_WEIGHTS[int(x)] if int(x) < len(ROLLING_WEIGHTS) else ROLLING_WEIGHTS[-1])
 
-    valid_days = len(group)
+    total_data_days = len(group)
+
+    if '数据完整性' in group.columns:
+        complete_group = group[group['数据完整性'] != '不完整'].copy()
+    else:
+        complete_group = group.copy()
+
+    valid_days = len(complete_group)
 
     res = {
         '用户id': user_id,
         '统计日期': latest_date.strftime('%Y-%m-%d'),
-        '近7天有数据天数': valid_days
+        '近7天有数据天数': total_data_days,
+        '近7天有效数据天数': valid_days
     }
 
     latest_row = group[group['days_ago'] == 0].iloc[0] if not group[group['days_ago'] == 0].empty else group.iloc[0]
@@ -253,25 +261,25 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
         ('深夜换电占比_当日', '近7d深夜换电占比'),
     ]
     for raw_col, roll_col in weighted_cols:
-        if raw_col in group.columns:
-            res[roll_col] = round(_weighted_avg(group[raw_col], group['weight']), 2)
+        if raw_col in complete_group.columns:
+            res[roll_col] = round(_weighted_avg(complete_group[raw_col], complete_group['weight']), 2)
         else:
             res[roll_col] = 0
 
-    if '高峰骑行占比' in group.columns and '当日总骑行时长_h' in group.columns:
-        res['近7d高峰骑行占比'] = round(_weighted_ratio(group['高峰骑行占比'], group['当日总骑行时长_h'], group['weight']), 2)
+    if '高峰骑行占比' in complete_group.columns and '当日总骑行时长_h' in complete_group.columns:
+        res['近7d高峰骑行占比'] = round(_weighted_ratio(complete_group['高峰骑行占比'], complete_group['当日总骑行时长_h'], complete_group['weight']), 2)
     else:
         res['近7d高峰骑行占比'] = 0
 
-    soc20_col = '当日SOC低于20%时长占比' if '当日SOC低于20%时长占比' in group.columns else 'SOC低于20%时长占比_当日'
-    if soc20_col in group.columns and '当日总骑行时长_h' in group.columns:
-        res['近7d_SOC低于20%时长占比'] = round(_weighted_ratio(group[soc20_col], group['当日总骑行时长_h'], group['weight']), 4)
+    soc20_col = '当日SOC低于20%时长占比' if '当日SOC低于20%时长占比' in complete_group.columns else 'SOC低于20%时长占比_当日'
+    if soc20_col in complete_group.columns and '当日总骑行时长_h' in complete_group.columns:
+        res['近7d_SOC低于20%时长占比'] = round(_weighted_ratio(complete_group[soc20_col], complete_group['当日总骑行时长_h'], complete_group['weight']), 4)
     else:
         res['近7d_SOC低于20%时长占比'] = 0
 
-    soc10_col = '当日SOC低于10%时长占比' if '当日SOC低于10%时长占比' in group.columns else 'SOC低于10%时长占比_当日'
-    if soc10_col in group.columns and '当日总骑行时长_h' in group.columns:
-        res['近7d_SOC低于10%时长占比'] = round(_weighted_ratio(group[soc10_col], group['当日总骑行时长_h'], group['weight']), 4)
+    soc10_col = '当日SOC低于10%时长占比' if '当日SOC低于10%时长占比' in complete_group.columns else 'SOC低于10%时长占比_当日'
+    if soc10_col in complete_group.columns and '当日总骑行时长_h' in complete_group.columns:
+        res['近7d_SOC低于10%时长占比'] = round(_weighted_ratio(complete_group[soc10_col], complete_group['当日总骑行时长_h'], complete_group['weight']), 4)
     else:
         res['近7d_SOC低于10%时长占比'] = 0
 
@@ -285,14 +293,14 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
         ('最大单次出行距离_km', '近7d最大单次出行距离_km'),
     ]
     for raw_col, roll_col in max_cols:
-        if raw_col in group.columns:
-            val = group[raw_col].max()
+        if raw_col in complete_group.columns:
+            val = complete_group[raw_col].max()
             res[roll_col] = round(val, 2) if pd.notna(val) else 0
         else:
             res[roll_col] = 0
 
-    if '最晚骑行时刻_h' in group.columns:
-        valid = group['最晚骑行时刻_h'][group['最晚骑行时刻_h'] >= 0]
+    if '最晚骑行时刻_h' in complete_group.columns:
+        valid = complete_group['最晚骑行时刻_h'][complete_group['最晚骑行时刻_h'] >= 0]
         res['近7d最晚骑行时刻_h'] = round(valid.max(), 2) if len(valid) > 0 else -1
     else:
         res['近7d最晚骑行时刻_h'] = -1
@@ -301,14 +309,14 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
         ('当日最低SOC', '近7d最低SOC'),
     ]
     for raw_col, roll_col in min_cols:
-        if raw_col in group.columns:
-            val = group[raw_col].min()
+        if raw_col in complete_group.columns:
+            val = complete_group[raw_col].min()
             res[roll_col] = round(val, 2) if pd.notna(val) else 100
         else:
             res[roll_col] = 100
 
-    if '最早骑行时刻_h' in group.columns:
-        valid = group['最早骑行时刻_h'][group['最早骑行时刻_h'] >= 0]
+    if '最早骑行时刻_h' in complete_group.columns:
+        valid = complete_group['最早骑行时刻_h'][complete_group['最早骑行时刻_h'] >= 0]
         res['近7d最早骑行时刻_h'] = round(valid.min(), 2) if len(valid) > 0 else -1
     else:
         res['近7d最早骑行时刻_h'] = -1
@@ -336,16 +344,16 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
     ]
 
     for raw_col, cum_col, avg_col in cumulative_and_avg_cols:
-        if raw_col in group.columns:
-            cum_val = group[raw_col].sum()
+        if raw_col in complete_group.columns:
+            cum_val = complete_group[raw_col].sum()
             res[cum_col] = round(cum_val, 2) if pd.notna(cum_val) else 0
             res[avg_col] = round(res[cum_col] / valid_days, 2) if valid_days > 0 else 0
         else:
             res[cum_col] = 0
             res[avg_col] = 0
 
-    if '当日是否出勤' in group.columns:
-        attendance_sum = group['当日是否出勤'].sum()
+    if '当日是否出勤' in complete_group.columns:
+        attendance_sum = complete_group['当日是否出勤'].sum()
         res['近7d出勤天数'] = round(attendance_sum, 2) if pd.notna(attendance_sum) else 0
         res['近7d出勤率'] = round(res['近7d出勤天数'] / valid_days, 2) if valid_days > 0 else 0
     else:
@@ -364,8 +372,8 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
     }])
     res['近7d工作特点'] = get_work_pattern(pattern_group)
 
-    if '客户形态_综合' in group.columns:
-        type_values = group['客户形态_综合'].dropna()
+    if '客户形态_综合' in complete_group.columns:
+        type_values = complete_group['客户形态_综合'].dropna()
         if len(type_values) > 0:
             unique_types = type_values.unique()
             if '改装/超速车' in unique_types:
@@ -421,7 +429,7 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
     return res
 
 
-# 月度出勤预估参数（借鉴原脚本逻辑）
+# 月度用电预估参数
 MIN_RECORD_DAYS_FOR_ESTIMATE = 7
 FULL_RECORD_DAYS_FOR_CUMULATIVE = 30
 DEFAULT_MONTH_DAYS = 26
@@ -430,34 +438,42 @@ MONTH_CALENDAR_DAYS = 30
 
 def calc_user_monthly_attendance(df_rolling: pd.DataFrame, df_snapshot: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    基于用户历史全量数据计算月度用电预估（借鉴原脚本逻辑）
-    
+    基于用户历史全量数据计算月度用电预估
+
+    有效日判定：用电量>0 即算出勤。仅排除数据不完整的日期。
+
     分三档：
-    - 有记录天数 < 7：兜底值 26 天
-    - 7 <= 有记录天数 < 30：出勤率 × 30 天（实际出勤率估算）
-    - 有记录天数 >= 30：出勤率 × 30 天（真实累计计算）
-    
+    - 完整记录天数 < 7：兜底值 26 天
+    - 7 <= 完整记录天数 < 30：出勤率 × 30 天
+    - 完整记录天数 >= 30：出勤率 × 30 天
+
     返回：
         (df_rolling, df_attendance_detail)
     """
-    # 按用户聚合历史全量数据
     attendance_stats = {}
     attendance_details = []
-    
+
     for uid, group in df_snapshot.groupby('用户id'):
         group_unique = group.drop_duplicates(subset=['统计日期']).sort_values('统计日期')
-        total_record_days = len(group_unique)
-        total_attendance_days = group_unique['当日是否出勤'].sum() if '当日是否出勤' in group_unique.columns else 0
-        attendance_rate = round(total_attendance_days / total_record_days, 4) if total_record_days > 0 else 0
-        
-        # 计算历史单合约日均用电量
-        if '单合约日均用电量_kWh' in group_unique.columns:
-            avg_single_contract_energy = group_unique['单合约日均用电量_kWh'].mean()
+
+        incomplete_days = 0
+        if '数据完整性' in group_unique.columns:
+            incomplete_mask = group_unique['数据完整性'] == '不完整'
+            incomplete_days = incomplete_mask.sum()
+            group_valid = group_unique[~incomplete_mask].copy()
         else:
-            total_cum_energy = group_unique['当日总用电量_kWh'].sum() if '当日总用电量_kWh' in group_unique.columns else 0
+            group_valid = group_unique.copy()
+
+        total_record_days = len(group_valid)
+        total_attendance_days = group_valid['当日是否出勤'].sum() if '当日是否出勤' in group_valid.columns else 0
+        attendance_rate = round(total_attendance_days / total_record_days, 4) if total_record_days > 0 else 0
+
+        if '单合约日均用电量_kWh' in group_valid.columns:
+            avg_single_contract_energy = group_valid['单合约日均用电量_kWh'].mean()
+        else:
+            total_cum_energy = group_valid['当日总用电量_kWh'].sum() if '当日总用电量_kWh' in group_valid.columns else 0
             avg_single_contract_energy = total_cum_energy / total_record_days if total_record_days > 0 else 0
-        
-        # 分档计算月度预估工作天数
+
         if total_record_days < MIN_RECORD_DAYS_FOR_ESTIMATE:
             month_estimate_days = DEFAULT_MONTH_DAYS
             estimate_type = "兜底值"
@@ -467,17 +483,18 @@ def calc_user_monthly_attendance(df_rolling: pd.DataFrame, df_snapshot: pd.DataF
         else:
             month_estimate_days = round(attendance_rate * MONTH_CALENDAR_DAYS, 1)
             estimate_type = "真实累计计算"
-        
+
         final_month_energy = round(avg_single_contract_energy * month_estimate_days, 2)
-        
+
         attendance_stats[uid] = {
             '月度预估工作天数': month_estimate_days,
             '单合约月度用电度数预估_kWh': final_month_energy,
         }
-        
+
         attendance_details.append({
             '用户id': uid,
-            '有记录的总天数': total_record_days,
+            '完整记录天数': total_record_days,
+            '排除的不完整天数': int(incomplete_days),
             '实际出勤总天数': total_attendance_days,
             '历史出勤率': attendance_rate,
             '历史单合约日均用电量_kWh': round(avg_single_contract_energy, 2),
@@ -518,7 +535,7 @@ def determine_lifecycle_state(row: dict, current_date: pd.Timestamp) -> str:
             return '新用户'
     
     attendance_days = row.get('近7d出勤天数', 0)
-    has_data_days = row.get('近7天有数据天数', 0)
+    has_data_days = row.get('近7天有效数据天数', 0)
     
     if attendance_days == 0:
         if has_data_days <= MIN_DATA_DAYS_TO_AVOID_CHURN:

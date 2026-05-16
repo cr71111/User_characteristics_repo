@@ -47,7 +47,7 @@ except ImportError:
     from src.report_layer import process_report_layer
 
 
-def run_full_pipeline(target_date: str = None):
+def run_full_pipeline(target_date: str = None, skip_incomplete: bool = True):
     """full 模式：清除历史数据 → L1 → L4，全量重建"""
     print("\n" + "=" * 80)
     print("🚀 执行模式: FULL (全量重建)")
@@ -63,7 +63,7 @@ def run_full_pipeline(target_date: str = None):
     print()
 
     # L1: Fact层（全量处理所有日期）
-    process_fact_layer(target_date=None)
+    process_fact_layer(target_date=None, skip_incomplete=skip_incomplete)
 
     # L2: Snapshot层
     process_snapshot_layer(target_date=None)
@@ -78,7 +78,7 @@ def run_full_pipeline(target_date: str = None):
     print(f"\n⏱️  全量流水线完成，总耗时: {elapsed:.2f} 秒")
 
 
-def run_incremental(target_date: str = None):
+def run_incremental(target_date: str = None, skip_incomplete: bool = True):
     """incremental 模式：L1 → L4，仅处理新日期（自动检测缺失日期，排除当天）"""
     print("\n" + "=" * 80)
     print("🚀 执行模式: INCREMENTAL (增量处理)")
@@ -90,7 +90,7 @@ def run_incremental(target_date: str = None):
         print(f"   ⚠️  注意: incremental模式将忽略--date参数，自动检测所有缺失日期")
 
     # L1: Fact层（自动跳过已有日期和当天数据），返回新增日期
-    _, new_dates = process_fact_layer(target_date=None)
+    _, new_dates, _ = process_fact_layer(target_date=None, skip_incomplete=skip_incomplete)
 
     if not new_dates:
         print("   ✅ 无新增日期需要处理，流水线结束")
@@ -111,7 +111,7 @@ def run_incremental(target_date: str = None):
     print(f"\n⏱️  增量流水线完成，总耗时: {elapsed:.2f} 秒")
 
 
-def run_refresh(target_date: str = None):
+def run_refresh(target_date: str = None, **kwargs):
     """refresh 模式：L2 → L4，调整聚合逻辑后重跑（保留L1数据）"""
     print("\n" + "=" * 80)
     print("🚀 执行模式: REFRESH (刷新聚合)")
@@ -132,7 +132,7 @@ def run_refresh(target_date: str = None):
     print(f"\n⏱️  刷新流水线完成，总耗时: {elapsed:.2f} 秒")
 
 
-def run_recalculate(target_date: str = None):
+def run_recalculate(target_date: str = None, **kwargs):
     """recalculate 模式：L3 → L4，调整评级规则后重跑（保留L1-L2数据）"""
     print("\n" + "=" * 80)
     print("🚀 执行模式: RECALCULATE (重新评级)")
@@ -150,7 +150,7 @@ def run_recalculate(target_date: str = None):
     print(f"\n⏱️  重算流水线完成，总耗时: {elapsed:.2f} 秒")
 
 
-def run_report_only(target_date: str = None):
+def run_report_only(target_date: str = None, **kwargs):
     """report_only 模式：L4，仅重新生成报告文件（保留L1-L3数据）"""
     print("\n" + "=" * 80)
     print("🚀 执行模式: REPORT_ONLY (仅报告)")
@@ -205,7 +205,7 @@ def _clear_directory(dir_path: str, dir_label: str) -> bool:
     return failed == 0
 
 
-def run_from_layer(layer: str, target_date: str = None):
+def run_from_layer(layer: str, target_date: str = None, skip_incomplete: bool = True):
     """从指定层开始重建：清除该层及下游数据，然后重算"""
 
     layer_order = ['L1', 'L2', 'L3', 'L4']
@@ -236,7 +236,7 @@ def run_from_layer(layer: str, target_date: str = None):
     print()
 
     if start_idx <= 0:
-        process_fact_layer(target_date=None)
+        process_fact_layer(target_date=None, skip_incomplete=skip_incomplete)
     if start_idx <= 1:
         process_snapshot_layer(target_date=None)
     if start_idx <= 2:
@@ -271,11 +271,19 @@ def main():
         choices=['L1', 'L2', 'L3', 'L4'],
         help='从指定层开始重建，清除该层及下游数据后重算 (L1=全量, L2=跳过Fact, L3=跳过Fact+Snapshot, L4=仅报告)'
     )
+    parser.add_argument(
+        '--skip-incomplete',
+        type=lambda x: x.lower() not in ('false', 'no', '0', 'off'),
+        default=True,
+        nargs='?',
+        const=True,
+        help='跳过数据不完整的日期（默认开启）。使用 --skip-incomplete false 关闭'
+    )
 
     args = parser.parse_args()
 
     if args.layer:
-        run_from_layer(args.layer, target_date=args.date)
+        run_from_layer(args.layer, target_date=args.date, skip_incomplete=args.skip_incomplete)
         return
 
     mode_map = {
@@ -287,7 +295,7 @@ def main():
     }
 
     pipeline_func = mode_map[args.mode]
-    pipeline_func(target_date=args.date)
+    pipeline_func(target_date=args.date, skip_incomplete=args.skip_incomplete)
 
 
 if __name__ == "__main__":

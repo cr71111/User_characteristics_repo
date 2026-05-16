@@ -91,6 +91,10 @@ OVER_CURRENT_MIN_HOUR = 0.1
 SOC_LOW_WARNING = 20
 SOC_CRITICAL = 10
 
+# 数据完整性校验阈值
+MIN_TIME_SPAN_HOURS = 20
+MIN_HOUR_COVERAGE = 20
+
 # 用户等级判定阈值 & 包月友好评分扣分阈值
 # 统一由 score_common.py 管理，fact_layer 通过导入函数间接使用
 
@@ -579,8 +583,8 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             total_discharge_hours = round(total_discharge_hours, 2)
             res['总放电时长(小时)'] = total_discharge_hours
 
-            # 出勤判定：骑行>=0.5h 或 放电>=0.5h（覆盖地摊/储能等无骑行但有放电的场景）
-            is_work_day = 1 if (total_riding_hours >= 0.5 or total_discharge_hours >= 0.5) else 0
+            # 出勤判定：当日用电量>0即算出勤
+            is_work_day = 1 if res.get('总用电量(kWh)', 0) > 0 else 0
             res['当日是否出勤'] = is_work_day
 
             # -------------------------- 8. 怠速放电时长计算 --------------------------
@@ -950,10 +954,60 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
 
 
 # ==============================================================================
+# 数据完整性校验
+# ==============================================================================
+def _check_data_completeness(df_raw, date_str):
+    """校验源数据是否完整（是否为完整一天的数据）
+
+    Args:
+        df_raw: 原始数据DataFrame
+        date_str: 日期字符串 YYYY-MM-DD
+
+    Returns:
+        (is_complete, reason) 元组 — 无论是否跳过，始终返回真实完整性状态
+    """
+    issues = []
+
+    if '时间戳' not in df_raw.columns:
+        return False, "缺少时间戳列，无法校验"
+
+    timestamps = pd.to_datetime(df_raw['时间戳'], unit='s', errors='coerce').dropna()
+    if len(timestamps) == 0:
+        return False, "无有效时间戳数据"
+
+    time_span_hours = (timestamps.max() - timestamps.min()).total_seconds() / 3600
+    if time_span_hours < MIN_TIME_SPAN_HOURS:
+        issues.append(f"时间跨度仅{time_span_hours:.1f}h（要求≥{MIN_TIME_SPAN_HOURS}h）")
+
+    hours_with_data = timestamps.dt.hour.nunique()
+    if hours_with_data < MIN_HOUR_COVERAGE:
+        issues.append(f"仅覆盖{hours_with_data}/24个小时（要求≥{MIN_HOUR_COVERAGE}）")
+
+    if issues:
+        reason = f"数据不完整({date_str}): " + "; ".join(issues)
+        return False, reason
+
+    return True, ""
+
+
+# ==============================================================================
 # 主处理函数
 # ==============================================================================
-def process_fact_layer(target_date: Optional[str] = None):
-    """处理fact层数据"""
+def process_fact_layer(target_date: Optional[str] = None, skip_incomplete: bool = True):
+    """处理fact层数据
+
+    Args:
+        target_date: 目标日期 YYYY-MM-DD，None表示处理所有日期
+        skip_incomplete: 是否跳过数据不完整的日期（默认True）
+
+    Returns:
+        (processed, new_dates, skipped_dates) 三元组
+        - processed: {date_str: output_path}
+        - new_dates: set of newly processed dates
+        - skipped_dates: {date_str: reason} 被跳过的日期及原因
+    """
+    import json
+
     print("\n" + "="*80)
     print("L1 Fact Layer - 客观事实层")
     print("="*80)
@@ -963,71 +1017,99 @@ def process_fact_layer(target_date: Optional[str] = None):
     raw_dir = EXPORT_PATH_BATTERY_STATUS_DAILY
     output_dir = EXPORT_PATH_FACT_DAILY
     os.makedirs(output_dir, exist_ok=True)
-    
+
     raw_files = sorted([f for f in os.listdir(raw_dir) if f.startswith('battery_status_') and f.endswith('.parquet')])
     if not raw_files:
         print("❌ 未找到原始数据文件")
-        return {}, set()
-    
-    # 过滤掉当天的数据（只计算到昨日）
+        return {}, set(), {}
+
     today_str = datetime.now().strftime('%Y-%m-%d')
     raw_files = [f for f in raw_files if f.replace('battery_status_', '').replace('.parquet', '') < today_str]
     if not raw_files:
         print("❌ 未找到需要处理的数据（当天数据已过滤）")
-        return {}, set()
-    
+        return {}, set(), {}
+
     processed = {}
     new_dates = set()
-    
+    skipped_dates = {}
+
     for filename in raw_files:
         date_str = filename.replace('battery_status_', '').replace('.parquet', '')
-        
+
         if target_date and date_str != target_date:
             continue
-        
+
         output_path = os.path.join(output_dir, f"{date_str}.parquet")
         if os.path.exists(output_path):
             print(f"⏭️  L1 已存在，跳过: {output_path}")
             processed[date_str] = output_path
             continue
-        
+
         new_dates.add(date_str)
-        
+
         print(f"\n📊 处理日期: {date_str}")
         raw_path = os.path.join(raw_dir, filename)
-        
+
         try:
             df_raw = pd.read_parquet(raw_path)
         except Exception as e:
             print(f"⚠️ 读取原始数据失败 {raw_path}: {e}")
             continue
-        
+
         print(f"   ✅ 加载完成：{len(df_raw):,} 行数据")
-        
+
+        is_complete, reason = _check_data_completeness(df_raw, date_str)
+        if not is_complete:
+            if skip_incomplete:
+                print(f"   ⚠️  {reason}，跳过统计")
+                skipped_dates[date_str] = reason
+                new_dates.discard(date_str)
+                continue
+            else:
+                print(f"   ⚠️  {reason}，数据将标记为'不完整'（因 --skip-incomplete false）")
+
         # 数据预处理
         df_clean = preprocess_raw_data(df_raw)
         print(f"   ✅ 清洗完成：{len(df_clean):,} 行有效数据")
-        
+
         # 计算合约指标
         df_result = calc_contract_metrics(df_clean, battery_voltage_map)
-        
+
         if df_result.empty:
             print("   ❌ 无有效合约指标")
             continue
-        
+
         # GPS空间匹配
         print("🗺️  执行GPS空间匹配...")
         region_info = batch_gps_to_region(df_result, lat_col='中心纬度', lon_col='中心经度')
         for col in ['核心活动省份', '核心活动城市', '核心活动区县']:
             if col in region_info.columns:
                 df_result[col] = region_info[col]
+
+        # 数据完整性标记
+        df_result['数据完整性'] = '完整' if is_complete else '不完整'
+        df_result['数据完整性说明'] = '' if is_complete else reason
         
         df_result.to_parquet(output_path, engine='pyarrow', compression='snappy')
         print(f"   ✅ L1 保存: {output_path} ({len(df_result):,} 个合约日记录)")
         processed[date_str] = output_path
-    
-    print(f"\n✅ L1 Fact Layer 完成，处理 {len(processed)} 个日期（新增 {len(new_dates)} 个）")
-    return processed, new_dates
+
+    if skipped_dates:
+        skipped_log_path = os.path.join(output_dir, 'skipped_dates.json')
+        existing_skipped = {}
+        if os.path.exists(skipped_log_path):
+            try:
+                with open(skipped_log_path, 'r', encoding='utf-8') as f:
+                    existing_skipped = json.load(f)
+            except Exception:
+                pass
+        existing_skipped.update(skipped_dates)
+        with open(skipped_log_path, 'w', encoding='utf-8') as f:
+            json.dump(existing_skipped, f, ensure_ascii=False, indent=2)
+        print(f"   📋 跳过日期日志已更新: {skipped_log_path} ({len(skipped_dates)} 个日期)")
+
+    print(f"\n✅ L1 Fact Layer 完成，处理 {len(processed)} 个日期（新增 {len(new_dates)} 个，跳过 {len(skipped_dates)} 个）")
+    return processed, new_dates, skipped_dates
 
 
 if __name__ == "__main__":
