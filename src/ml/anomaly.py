@@ -38,7 +38,7 @@ import pandas as pd
 
 warnings.filterwarnings('ignore')
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -107,7 +107,7 @@ class AnomalyDetector:
         返回:
             包含异常检测结果的DataFrame（新增列）
         """
-        from src.ml_features import FeatureExtractor
+        from src.ml.features import FeatureExtractor
 
         df = df.copy()
 

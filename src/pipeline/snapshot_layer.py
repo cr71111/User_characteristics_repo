@@ -17,12 +17,12 @@ import numpy as np
 
 warnings.filterwarnings('ignore')
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from config.config import EXPORT_PATH_FACT_DAILY, EXPORT_PATH_SNAPSHOT
-from score_common import (
+from src.pipeline.score_common import (
     SOC_CRITICAL_RATIO_DEDUCT_THRESHOLD, SOC_LOW_RATIO_DEDUCT_THRESHOLD,
     SOC_OPTIMAL_LOWER, SOC_OPTIMAL_UPPER, SOC_OPTIMAL_BONUS,
     MAX_SOC_DEDUCT, MAX_ENERGY_DEDUCT,

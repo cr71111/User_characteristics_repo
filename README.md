@@ -1,7 +1,7 @@
 # 两轮车换电用户特征画像系统 - 项目技术文档 v2.6
 
 > **最后更新:** 2026-05-16  
-> **代码版本:** v2.6 (监督学习：XGBoost分类器 + 人工标注反馈闭环)  
+> **代码版本:** v2.7 (项目结构优化：pipeline/ml/tools 三层分目录架构)  
 > **项目路径:** `d:\PY代码\用户特征画像\User_characteristics_repo`
 
 ---
@@ -64,6 +64,7 @@
 | **v2.3** | **2026-05-15** | **数据完整性校验：自动跳过不完整源数据，不完整日期不计入出勤率计算** |
 | **v2.4** | **2026-05-16** | **出勤判定改为用电量>0 + 参数自动校准器（AI辅助参数调优）** |
 | **v2.5** | **2026-05-16** | **ML异常检测：孤立森林 + DBSCAN双模型，发现规则之外的异常** |
+| **v2.7** | **2026-05-17** | **项目结构优化：pipeline/ml/tools 三层分目录架构** |
 | **v2.6** | **2026-05-16** | **监督学习：XGBoost多分类 + 人工标注工具 + 反馈闭环** |
 
 ---
@@ -150,7 +151,7 @@
 
 ### 3.1 L1: Fact Layer (客观事实层)
 
-**📁 文件位置:** [src/fact_layer.py](src/fact_layer.py)  
+**📁 文件位置:** [src/pipeline/fact_layer.py](src/pipeline/fact_layer.py)  
 **⚙️ 入口函数:** `process_fact_layer(target_date)`  
 **🎯 职责:** 将每日原始数据转换为结构化的合约日级指标
 
@@ -379,7 +380,7 @@ def calculate_energy_soc_diff(df, battery_voltage_map):
 
 ### 3.2 L2: Snapshot Layer (用户日级快照层)
 
-**📁 文件位置:** [src/snapshot_layer.py](src/snapshot_layer.py)  
+**📁 文件位置:** [src/pipeline/snapshot_layer.py](src/pipeline/snapshot_layer.py)  
 **⚙️ 入口函数:** `process_snapshot_layer(target_date)`  
 **🎯 职责:** 将多日的Fact数据聚合成用户维度的7天滚动窗口快照
 
@@ -491,7 +492,7 @@ def calculate_energy_soc_diff(df, battery_voltage_map):
 
 ### 3.3 L3: Lifecycle Layer (用户生命周期层)
 
-**📁 文件位置:** [src/lifecycle_layer.py](src/lifecycle_layer.py)  
+**📁 文件位置:** [src/pipeline/lifecycle_layer.py](src/pipeline/lifecycle_layer.py)  
 **⚙️ 入口函数:** `process_lifecycle_layer(target_date)`  
 **🎯 职责:** 用户评分分类 + 风险标签生成 + 完整画像文本 + 合约信息整合
 
@@ -678,7 +679,7 @@ STRATEGY_MAP = {
 
 ### 3.4 L4: Report Layer (报告输出层)
 
-**📁 文件位置:** [src/report_layer.py](src/report_layer.py)  
+**📁 文件位置:** [src/pipeline/report_layer.py](src/pipeline/report_layer.py)  
 **⚙️ 入口函数:** `process_report_layer(target_date)`  
 **🎯 职责:** 将Lifecycle层数据导出为多种业务友好的报告格式
 
@@ -700,7 +701,7 @@ STRATEGY_MAP = {
 
 ## 4. 动态阈值系统 (DynamicThresholds)
 
-**📁 文件位置:** [src/dynamic_thresholds.py](src/dynamic_thresholds.py)  
+**📁 文件位置:** [src/pipeline/dynamic_thresholds.py](src/pipeline/dynamic_thresholds.py)  
 **⚙️ 核心类:** `DynamicBatteryAnalyzer`
 
 ### 4.1 系统目标
@@ -796,7 +797,7 @@ STRATEGY_MAP = {
 
 ## 5. Pipeline 执行模式
 
-**📁 文件位置:** [src/run_pipeline.py](src/run_pipeline.py)  
+**📁 文件位置:** [src/pipeline/run_pipeline.py](src/pipeline/run_pipeline.py)  
 **⚙️ 入口函数:** `main()` (命令行调用)
 
 ### 5.1 模式总览
@@ -974,14 +975,14 @@ STRATEGY_MAP = {
 ### 6.1 梯形数值积分法 (用电量计算)
 
 **应用层级:** L1 Fact Layer  
-**应用位置:** [fact_layer.py](src/fact_layer.py) - `calculate_energy_trapezoidal()` 函数
+**应用位置:** [fact_layer.py](src/pipeline/fact_layer.py) - `calculate_energy_trapezoidal()` 函数
 
 详见 3.1.3 节第③部分。
 
 ### 6.2 出勤率法 (月度用电量预估)
 
 **应用层级:** L3 Lifecycle Layer  
-**应用位置:** [lifecycle_layer.py](src/lifecycle_layer.py) - `calc_user_monthly_attendance()` 函数
+**应用位置:** [lifecycle_layer.py](src/pipeline/lifecycle_layer.py) - `calc_user_monthly_attendance()` 函数
 
 有效日判定：用电量>0即算出勤。三档预估：<7天兜底26天，7-29天出勤率×30，≥30天出勤率×30。
 
@@ -1010,7 +1011,7 @@ STRATEGY_MAP = {
 ### 6.4 凸包算法 (活动半径计算)
 
 **应用层级:** L1 Fact Layer  
-**应用位置:** [fact_layer.py](src/fact_layer.py) - ConvexHull计算
+**应用位置:** [fact_layer.py](src/pipeline/fact_layer.py) - ConvexHull计算
 
 ```python
 from scipy.spatial import ConvexHull
@@ -1031,7 +1032,7 @@ from scipy.spatial import ConvexHull
 ### 6.5 EMA平滑算法 (基准线更新)
 
 **应用层级:** L3 Lifecycle Layer → DynamicThresholds  
-**应用位置:** [dynamic_thresholds.py](src/dynamic_thresholds.py) - `_ema_update_baseline()` 函数
+**应用位置:** [dynamic_thresholds.py](src/pipeline/dynamic_thresholds.py) - `_ema_update_baseline()` 函数
 
 详见 4.3 节。
 
@@ -1067,14 +1068,28 @@ User_characteristics_repo/
 │
 ├── src/
 │   ├── __init__.py
-│   ├── run_pipeline.py         # ⭐ 流水线主入口 (5种执行模式)
-│   ├── fact_layer.py           # L1 日级事实计算 (梯形积分法)
-│   ├── snapshot_layer.py       # L2 7天滚动快照聚合
-│   ├── lifecycle_layer.py      # L3 评分分类+画像+合约信息
-│   ├── report_layer.py         # L4 多格式报告导出
-│   ├── score_layer.py          # 评分逻辑工具库 (被L3调用)
-│   ├── dynamic_thresholds.py   # 动态阈值系统 (EMA自动更新)
-│   └── thresholds_baseline.json # 阈值基准线文件 (自动更新)
+│   ├── pipeline/               # 🔧 数据处理管线核心
+│   │   ├── __init__.py
+│   │   ├── run_pipeline.py     # ⭐ 流水线主入口 (5种执行模式)
+│   │   ├── fact_layer.py       # L1 日级事实计算 (梯形积分法)
+│   │   ├── snapshot_layer.py   # L2 7天滚动快照聚合
+│   │   ├── lifecycle_layer.py  # L3 评分分类+画像+合约信息
+│   │   ├── report_layer.py     # L4 多格式报告导出
+│   │   ├── score_layer.py      # 评分逻辑工具库 (被L3调用)
+│   │   ├── score_common.py     # 评分公共函数 (被L1/L2调用)
+│   │   └── dynamic_thresholds.py # 动态阈值系统 (EMA自动更新)
+│   │
+│   ├── ml/                     # 🤖 机器学习模块
+│   │   ├── __init__.py
+│   │   ├── features.py         # 特征提取 (FeatureExtractor)
+│   │   ├── anomaly.py          # 无监督异常检测 (孤立森林+DBSCAN)
+│   │   ├── classifier.py       # 监督学习分类 (XGBoost多分类)
+│   │   └── labeler.py          # 人工标注工具 (反馈闭环)
+│   │
+│   └── tools/                  # 🛠️ 辅助工具
+│       ├── __init__.py
+│       ├── auto_calibrate.py   # 参数自动校准 (分位数分析)
+│       └── thresholds_baseline.json # 阈值基准线文件 (自动更新)
 │
 ├── utils/
 │   ├── __init__.py
@@ -1092,8 +1107,8 @@ User_characteristics_repo/
 │   ├── 用户生命周期管理 copy.py
 │   └── 用户用电情况_独立版.py
 │
-├── PROJECT_LOGIC.md            # 📄 本技术文档
 ├── README.md                   # 项目说明文档
+├── 各指标参数.md                # 各指标判定参数详解
 │
 └── data/                       # (运行后生成)
     ├── fact/daily/             # L1输出: 按日期分区的parquet文件
@@ -1252,13 +1267,13 @@ print(analyzer.store.load())  # 查看当前基准线
 
 ```bash
 # 基于最近30天数据校准所有参数
-python src/auto_calibrate.py --days 30
+python src/tools/auto_calibrate.py --days 30
 
 # 基于最近90天数据
-python src/auto_calibrate.py --days 90
+python src/tools/auto_calibrate.py --days 90
 
 # 只校准特定类别
-python src/auto_calibrate.py --days 30 --categories current,score
+python src/tools/auto_calibrate.py --days 30 --categories current,score
 ```
 
 ### 9.3 校准维度
@@ -1300,13 +1315,13 @@ python src/auto_calibrate.py --days 30 --categories current,score
 
 ```bash
 # 对lifecycle层输出做异常检测
-python src/ml_anomaly.py --input ./data/output/lifecycle/lifecycle_YYYYMMDD.parquet
+python src/ml/anomaly.py --input ./data/output/lifecycle/lifecycle_YYYYMMDD.parquet
 
 # 调整异常比例（默认5%）
-python src/ml_anomaly.py --input ./data/output/lifecycle/lifecycle_YYYYMMDD.parquet --contamination 0.03
+python src/ml/anomaly.py --input ./data/output/lifecycle/lifecycle_YYYYMMDD.parquet --contamination 0.03
 
 # 不保存报告（仅打印）
-python src/ml_anomaly.py --input ./data/output/lifecycle/lifecycle_YYYYMMDD.parquet --no-save
+python src/ml/anomaly.py --input ./data/output/lifecycle/lifecycle_YYYYMMDD.parquet --no-save
 ```
 
 ### 10.3 特征体系
@@ -1402,29 +1417,29 @@ ML模型判定（发现未知异常）
 
 ```
 Step 1: 孤立森林异常检测
-  python src/ml_anomaly.py --input ./data/output/lifecycle/user_7d.parquet
+  python src/ml/anomaly.py --input ./data/output/lifecycle/user_7d.parquet
 
 Step 2: 生成待标注文件
-  python src/ml_labeler.py generate --input ./data/output/ml_anomaly/anomaly_report_xxx.csv
+  python src/ml/labeler.py generate --input ./data/output/ml_anomaly/anomaly_report_xxx.csv
 
 Step 3: 人工标注（打开CSV，填写"人工标注"列）
   可选值: 正常 | 改装/超速 | 地摊/储能 | 电池老化 | 暴力驾驶 | 其他异常 | 不确定
 
 Step 4: 保存标注结果
-  python src/ml_labeler.py save --input ./data/output/ml_anomaly/labels/to_label_xxx.csv
+  python src/ml/labeler.py save --input ./data/output/ml_anomaly/labels/to_label_xxx.csv
 
 Step 5: 训练XGBoost分类器
-  python src/ml_classifier.py train
+  python src/ml/classifier.py train
       --labels ./data/output/ml_anomaly/labels/labeled_data.csv
       --lifecycle ./data/output/lifecycle/user_7d.parquet
 
 Step 6: 预测新数据
-  python src/ml_classifier.py predict
+  python src/ml/classifier.py predict
       --lifecycle ./data/output/lifecycle/user_7d.parquet
       --model ./data/output/ml_anomaly/models/xgb_model_xxx.json
 
 Step 7: 查看特征重要性
-  python src/ml_classifier.py importance
+  python src/ml/classifier.py importance
       --model ./data/output/ml_anomaly/models/xgb_model_xxx.json
 ```
 
@@ -1457,7 +1472,7 @@ Step 7: 查看特征重要性
 ### 11.5 标注统计
 
 ```bash
-python src/ml_labeler.py stats
+python src/ml/labeler.py stats
 ```
 
 输出示例：

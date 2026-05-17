@@ -22,13 +22,13 @@ from tqdm import tqdm
 
 warnings.filterwarnings('ignore')
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from config.config import EXPORT_PATH_FACT_DAILY, EXPORT_PATH_BATTERY_STATUS_DAILY, EXPORT_FILE_BATTERY_CELL_VOLTAGE
 from utils.geo import batch_gps_to_region, haversine
-from score_common import (
+from src.pipeline.score_common import (
     calc_monthly_score_v2, determine_user_level_v2,
     VIOLENT_CURRENT_TIMES, HIGH_LOSS_CURRENT_TIMES, OVER_CURRENT_MIN_HOUR,
     EXTREME_ENERGY_THRESHOLD,

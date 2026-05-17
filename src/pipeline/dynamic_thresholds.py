@@ -14,7 +14,7 @@
   5. 零人工干预：阈值从数据中来，到评级里去
 
 使用方式（集成到用户生命周期管理.py）：
-  from dynamic_thresholds import DynamicBatteryAnalyzer
+  from src.pipeline.dynamic_thresholds import DynamicBatteryAnalyzer
   analyzer = DynamicBatteryAnalyzer(baseline_path='./thresholds_baseline.json')
   thresholds, baseline = analyzer.run(df_lifecycle)
   df = analyzer.score_and_classify(df_lifecycle, thresholds, baseline)
@@ -471,7 +471,7 @@ class DynamicBatteryAnalyzer:
         【已委托】此方法已委托给 score_layer.score_and_classify()，
         确保 Pipeline 和独立运行模式使用完全一致的评分逻辑。
         """
-        from score_layer import score_and_classify as _score_and_classify
+        from src.pipeline.score_layer import score_and_classify as _score_and_classify
         return _score_and_classify(df, live_quantiles, active_baseline)
 
     # ── 辅助方法 ─────────────────────────────────────────────────────────

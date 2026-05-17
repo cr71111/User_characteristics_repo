@@ -40,7 +40,7 @@ import pandas as pd
 
 warnings.filterwarnings('ignore')
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -123,7 +123,7 @@ class SupervisedClassifier:
         返回:
             训练指标字典
         """
-        from src.ml_features import FeatureExtractor
+        from src.ml.features import FeatureExtractor
 
         if '用户id' not in df_labeled.columns or '人工标注' not in df_labeled.columns:
             raise ValueError("标注数据必须包含 '用户id' 和 '人工标注' 列")
@@ -242,7 +242,7 @@ class SupervisedClassifier:
         if self.model is None:
             raise ValueError("模型未训练或未加载，请先调用 train() 或 load_model()")
 
-        from src.ml_features import FeatureExtractor
+        from src.ml.features import FeatureExtractor
 
         df = df_lifecycle.copy()
 

@@ -25,13 +25,13 @@ import numpy as np
 warnings.filterwarnings('ignore')
 
 # 添加项目根目录到路径
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # 导入动态阈值分析模块
 try:
-    from dynamic_thresholds import (
+    from src.pipeline.dynamic_thresholds import (
         DynamicBatteryAnalyzer,
         BaselineStore,
         DistributionShiftDetector,
@@ -435,7 +435,7 @@ def generate_score_layer(fact_7d_rolling_path, baseline_path=None, output_path=N
     
     print("\n[2/4] 初始化动态阈值分析器...")
     if baseline_path is None:
-        baseline_path = os.path.join(os.path.dirname(__file__), 'thresholds_baseline.json')
+        baseline_path = os.path.join(os.path.dirname(__file__), '..', 'tools', 'thresholds_baseline.json')
     
     if DynamicBatteryAnalyzer:
         analyzer = DynamicBatteryAnalyzer(
@@ -454,7 +454,7 @@ def generate_score_layer(fact_7d_rolling_path, baseline_path=None, output_path=N
     
     print("\n[4/4] 持久化存储...")
     if output_path is None:
-        output_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'data', 'score')
+        output_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'score')
         os.makedirs(output_dir, exist_ok=True)
         output_path = os.path.join(output_dir, 'score_user_profile.csv')
     
@@ -486,7 +486,7 @@ def run_dynamic_analysis_on_fact(df_fact, baseline_path=None):
     print(f"📊 待分析用户数：{total_users:,}")
     
     if baseline_path is None:
-        baseline_path = os.path.join(os.path.dirname(__file__), 'thresholds_baseline.json')
+        baseline_path = os.path.join(os.path.dirname(__file__), '..', 'tools', 'thresholds_baseline.json')
     
     try:
         print(f"\n[1/3] 初始化分析器...")

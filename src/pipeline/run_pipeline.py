@@ -22,12 +22,11 @@ import sys
 import argparse
 from datetime import datetime
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# 确保src目录也在path中（支持 python -m src.run_pipeline 方式运行）
-src_dir = os.path.dirname(__file__)
+src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
@@ -35,16 +34,15 @@ from config.config import DATA_OUTPUT_ROOT
 
 # 使用兼容两种运行方式的导入
 try:
-    from fact_layer import process_fact_layer
-    from snapshot_layer import process_snapshot_layer
-    from lifecycle_layer import process_lifecycle_layer
-    from report_layer import process_report_layer
+    from src.pipeline.fact_layer import process_fact_layer
+    from src.pipeline.snapshot_layer import process_snapshot_layer
+    from src.pipeline.lifecycle_layer import process_lifecycle_layer
+    from src.pipeline.report_layer import process_report_layer
 except ImportError:
-    # 如果上述导入失败，尝试从src包导入
-    from src.fact_layer import process_fact_layer
-    from src.snapshot_layer import process_snapshot_layer
-    from src.lifecycle_layer import process_lifecycle_layer
-    from src.report_layer import process_report_layer
+    from src.pipeline.fact_layer import process_fact_layer
+    from src.pipeline.snapshot_layer import process_snapshot_layer
+    from src.pipeline.lifecycle_layer import process_lifecycle_layer
+    from src.pipeline.report_layer import process_report_layer
 
 
 def run_full_pipeline(target_date: str = None, skip_incomplete: bool = True):

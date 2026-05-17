@@ -19,12 +19,12 @@ from tqdm import tqdm
 
 warnings.filterwarnings('ignore')
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from config.config import EXPORT_PATH_SNAPSHOT, EXPORT_PATH_LIFECYCLE_7D, EXPORT_FILE_CONTRACT_EARLY
-from dynamic_thresholds import DynamicBatteryAnalyzer
+from src.pipeline.dynamic_thresholds import DynamicBatteryAnalyzer
 
 ROLLING_WINDOW_DAYS = 7
 ROLLING_WEIGHTS = np.array([1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4])
@@ -763,7 +763,7 @@ def process_lifecycle_layer(target_date: Optional[str] = None) -> str:
     print(f"   ✅ 合约信息注入完成")
 
     print("\n[4/6] 动态阈值计算与用户评分...")
-    baseline_path = os.path.join(os.path.dirname(__file__), 'thresholds_baseline.json')
+    baseline_path = os.path.join(os.path.dirname(__file__), '..', 'tools', 'thresholds_baseline.json')
     analyzer = DynamicBatteryAnalyzer(
         baseline_path=baseline_path,
         use_ema_update=True,  # 启用EMA自动更新基准文件
@@ -771,7 +771,7 @@ def process_lifecycle_layer(target_date: Optional[str] = None) -> str:
     )
     thresholds, baseline = analyzer.run(df_rolling)
 
-    from score_layer import score_and_classify
+    from src.pipeline.score_layer import score_and_classify
     df_scored = score_and_classify(df_rolling, thresholds, baseline)
     print(f"   评分分类完成")
 
