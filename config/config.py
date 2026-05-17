@@ -49,4 +49,4 @@ EXPORT_PATH_SNAPSHOT = os.path.join(DATA_OUTPUT_ROOT, "snapshot/user_daily.parqu
 EXPORT_PATH_LIFECYCLE_7D = os.path.join(DATA_OUTPUT_ROOT, "lifecycle/user_7d.parquet")
 EXPORT_PATH_REPORTS = os.path.join(DATA_OUTPUT_ROOT, "reports")
 
-EXPORT_PATH_THRESHOLDS_BASELINE = os.path.join(os.path.dirname(__file__), '..', 'src', 'thresholds_baseline.json')
+EXPORT_PATH_THRESHOLDS_BASELINE = os.path.join(os.path.dirname(__file__), '..', 'src', 'tools', 'thresholds_baseline.json')

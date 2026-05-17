@@ -11,10 +11,10 @@ Run Pipeline - 数据流水线主入口
 - report_only:  L4，仅重新生成报告文件
 
 使用示例：
-    python run_pipeline.py --mode incremental --date 2026-04-19
-    python run_pipeline.py --mode full
-    python run_pipeline.py --mode recalculate
-    python run_pipeline.py --mode report_only --date 2026-04-19
+    python src/pipeline/run_pipeline.py --mode incremental --date 2026-04-19
+    python src/pipeline/run_pipeline.py --mode full
+    python src/pipeline/run_pipeline.py --mode recalculate
+    python src/pipeline/run_pipeline.py --mode report_only --date 2026-04-19
 """
 
 import os

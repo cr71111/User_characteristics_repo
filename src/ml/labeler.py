@@ -22,13 +22,13 @@ ML标注工具 v1.0 — 人工标注管理 + 标注数据积累
 
 使用方式：
     # 生成待标注文件
-    python src/ml_labeler.py generate --input ./data/output/ml_anomaly/anomaly_report_xxx.csv
+    python src/ml/labeler.py generate --input ./data/output/ml_anomaly/anomaly_report_xxx.csv
 
     # 查看标注统计
-    python src/ml_labeler.py stats
+    python src/ml/labeler.py stats
 
     # 导出标注数据（用于训练）
-    python src/ml_labeler.py export --output ./data/output/ml_anomaly/labeled_dataset.csv
+    python src/ml/labeler.py export --output ./data/output/ml_anomaly/labeled_dataset.csv
 ===============================================================================
 """
 
@@ -307,7 +307,7 @@ class LabelManager:
 
         if stats['total'] == 0:
             print("暂无标注数据。")
-            print(f"\n生成待标注文件: python src/ml_labeler.py generate --input <异常报告路径>")
+            print(f"\n生成待标注文件: python src/ml/labeler.py generate --input <异常报告路径>")
             return
 
         print(f"累计标注: {stats['total']} 条")

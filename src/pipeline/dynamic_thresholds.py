@@ -15,7 +15,7 @@
 
 使用方式（集成到用户生命周期管理.py）：
   from src.pipeline.dynamic_thresholds import DynamicBatteryAnalyzer
-  analyzer = DynamicBatteryAnalyzer(baseline_path='./thresholds_baseline.json')
+  analyzer = DynamicBatteryAnalyzer(baseline_path='./src/tools/thresholds_baseline.json')
   thresholds, baseline = analyzer.run(df_lifecycle)
   df = analyzer.score_and_classify(df_lifecycle, thresholds, baseline)
 """
@@ -59,7 +59,7 @@ class BaselineStore:
     }
     """
 
-    def __init__(self, path: str = './thresholds_baseline.json'):
+    def __init__(self, path: str = './src/tools/thresholds_baseline.json'):
         self.path = path
         self._data: Optional[Dict] = None
 
@@ -352,13 +352,13 @@ class DynamicBatteryAnalyzer:
     的统一入口，替代用户生命周期管理.py 中的静态阈值。
 
     用法：
-      analyzer = DynamicBatteryAnalyzer(baseline_path='./thresholds_baseline.json')
+      analyzer = DynamicBatteryAnalyzer(baseline_path='./src/tools/thresholds_baseline.json')
       thresholds, baseline = analyzer.run(df_lifecycle)
       df_result = analyzer.score_and_classify(df_lifecycle, thresholds, baseline)
     """
 
     def __init__(self,
-                 baseline_path: str = './thresholds_baseline.json',
+                 baseline_path: str = './src/tools/thresholds_baseline.json',
                  column_map: Optional[Dict] = None,
                  use_ema_update: bool = False,
                  ema_alpha: float = 0.3):
@@ -520,7 +520,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='动态自适应阈值分析')
     parser.add_argument('--data',   default='E:/test/用户行为习惯/用户特征画像/全量用户7天滚动生命周期档案.csv')
     parser.add_argument('--output', default='E:/test/换电运营分析输出/')
-    parser.add_argument('--baseline', default='./thresholds_baseline.json')
+    parser.add_argument('--baseline', default='./src/tools/thresholds_baseline.json')
     parser.add_argument('--force-refresh', action='store_true')
     parser.add_argument('--use-ema', action='store_true',
                         help='启用 EMA 平滑更新基准线')

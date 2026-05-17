@@ -15,15 +15,15 @@ ML监督分类器 v1.0 — XGBoost多分类 + 特征重要性 + 模型持久化
 
 使用方式：
     # 训练模型
-    python src/ml_classifier.py train --labels ./data/output/ml_anomaly/labels/labeled_data.csv
+    python src/ml/classifier.py train --labels ./data/output/ml_anomaly/labels/labeled_data.csv
            --lifecycle ./data/output/lifecycle/user_7d.parquet
 
     # 预测新数据
-    python src/ml_classifier.py predict --lifecycle ./data/output/lifecycle/user_7d.parquet
+    python src/ml/classifier.py predict --lifecycle ./data/output/lifecycle/user_7d.parquet
            --model ./data/output/ml_anomaly/models/xgb_model_xxx.json
 
     # 查看特征重要性
-    python src/ml_classifier.py importance --model ./data/output/ml_anomaly/models/xgb_model_xxx.json
+    python src/ml/classifier.py importance --model ./data/output/ml_anomaly/models/xgb_model_xxx.json
 ===============================================================================
 """
 
@@ -488,7 +488,7 @@ if __name__ == '__main__':
         classifier.print_train_results()
 
         model_path = classifier.save_model(output_path=args.output)
-        print(f"\n下一步: python src/ml_classifier.py predict --lifecycle <路径> --model {model_path}")
+        print(f"\n下一步: python src/ml/classifier.py predict --lifecycle <路径> --model {model_path}")
 
     elif args.command == 'predict':
         classifier.load_model(args.model)

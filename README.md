@@ -1,6 +1,6 @@
-# 两轮车换电用户特征画像系统 - 项目技术文档 v2.6
+# 两轮车换电用户特征画像系统 - 项目技术文档 v2.7
 
-> **最后更新:** 2026-05-16  
+> **最后更新:** 2026-05-17  
 > **代码版本:** v2.7 (项目结构优化：pipeline/ml/tools 三层分目录架构)  
 > **项目路径:** `d:\PY代码\用户特征画像\User_characteristics_repo`
 
@@ -64,8 +64,8 @@
 | **v2.3** | **2026-05-15** | **数据完整性校验：自动跳过不完整源数据，不完整日期不计入出勤率计算** |
 | **v2.4** | **2026-05-16** | **出勤判定改为用电量>0 + 参数自动校准器（AI辅助参数调优）** |
 | **v2.5** | **2026-05-16** | **ML异常检测：孤立森林 + DBSCAN双模型，发现规则之外的异常** |
-| **v2.7** | **2026-05-17** | **项目结构优化：pipeline/ml/tools 三层分目录架构** |
 | **v2.6** | **2026-05-16** | **监督学习：XGBoost多分类 + 人工标注工具 + 反馈闭环** |
+| **v2.7** | **2026-05-17** | **项目结构优化：pipeline/ml/tools 三层分目录架构** |
 
 ---
 
@@ -121,7 +121,7 @@
 │  data/snapshot/user_daily.parquet← L2 用户7天滚动快照               │
 │  data/lifecycle/user_7d.parquet  ← L3 完整用户画像                 │
 │  data/reports/                   ← L4 各类分析报告                  │
-│  src/thresholds_baseline.json    ← 动态阈值基准线 (EMA自动更新)    │
+│  src/tools/thresholds_baseline.json ← 动态阈值基准线 (EMA自动更新)    │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -567,7 +567,7 @@ def calculate_energy_soc_diff(df, battery_voltage_map):
 ##### ② 动态阈值计算 (DynamicBatteryAnalyzer)
 ```python
 初始化参数:
-baseline_path = 'src/thresholds_baseline.json'
+baseline_path = 'src/tools/thresholds_baseline.json'
 use_ema_update = True    # ✅ 已启用EMA自动更新
 ema_alpha = 0.3          # EMA平滑系数
 
@@ -773,7 +773,7 @@ STRATEGY_MAP = {
   - 类似于金融领域的指数移动平均线
 
 输出:
-  - 更新文件: src/thresholds_baseline.json
+  - 更新文件: src/tools/thresholds_baseline.json
   - 日志标记: [EMA] ✅ 基准线文件已更新
 
 调试日志:
@@ -814,7 +814,7 @@ STRATEGY_MAP = {
 
 #### ① Full 模式 (全量重建)
 ```bash
-命令: python run_pipeline.py --mode full
+命令: python src/pipeline/run_pipeline.py --mode full
 
 特点:
 - 清除 data/fact/, data/snapshot/, data/lifecycle/, data/reports/ 所有历史数据
@@ -832,7 +832,7 @@ STRATEGY_MAP = {
 
 #### ② Incremental 模式 (增量处理) ⭐ (v1.5优化)
 ```bash
-命令: python run_pipeline.py --mode incremental
+命令: python src/pipeline/run_pipeline.py --mode incremental
 默认模式: 是 (不指定 --mode 时默认执行此模式)
 
 特点:
@@ -862,7 +862,7 @@ STRATEGY_MAP = {
 
 #### ③ Refresh 模式 (刷新聚合)
 ```bash
-命令: python run_pipeline.py --mode refresh [--date 2026-04-26]
+命令: python src/pipeline/run_pipeline.py --mode refresh [--date 2026-04-26]
 
 特点:
 - 保留 L1 (fact) 数据不变
@@ -877,7 +877,7 @@ STRATEGY_MAP = {
 
 #### ④ Recalculate 模式 (重新评级)
 ```bash
-命令: python run_pipeline.py --mode recalculate [--date 2026-04-26]
+命令: python src/pipeline/run_pipeline.py --mode recalculate [--date 2026-04-26]
 
 特点:
 - 保留 L1-L2 数据不变
@@ -893,7 +893,7 @@ STRATEGY_MAP = {
 
 #### ⑤ Report Only 模式 (仅报告)
 ```bash
-命令: python run_pipeline.py --mode report_only [--date 2026-04-26]
+命令: python src/pipeline/run_pipeline.py --mode report_only [--date 2026-04-26]
 
 特点:
 - 保留 L1-L3 数据不变
@@ -909,7 +909,7 @@ STRATEGY_MAP = {
 ### 5.3 命令行参数
 
 ```bash
-用法: python run_pipeline.py [选项]
+用法: python src/pipeline/run_pipeline.py [选项]
 
 选项:
   --mode {full,incremental,refresh,recalculate,report_only}
@@ -923,31 +923,31 @@ STRATEGY_MAP = {
 
 示例:
   # 日常增量处理 (最常用)
-  python run_pipeline.py
+  python src/pipeline/run_pipeline.py
   
   # 全量重建
-  python run_pipeline.py --mode full
+  python src/pipeline/run_pipeline.py --mode full
   
   # 仅重跑评级和报告
-  python run_pipeline.py --mode recalculate
+  python src/pipeline/run_pipeline.py --mode recalculate
   
   # 处理指定日期 (非incremental模式)
-  python run_pipeline.py --mode refresh --date 2026-04-26
+  python src/pipeline/run_pipeline.py --mode refresh --date 2026-04-26
   
   # 关闭数据完整性检查（强制处理不完整数据）
-  python run_pipeline.py --mode incremental --skip-incomplete false
+  python src/pipeline/run_pipeline.py --mode incremental --skip-incomplete false
   
   # 修改Fact层逻辑后，从L1开始重建
-  python run_pipeline.py --layer L1
+  python src/pipeline/run_pipeline.py --layer L1
   
   # 修改Snapshot层逻辑后，从L2开始重建
-  python run_pipeline.py --layer L2
+  python src/pipeline/run_pipeline.py --layer L2
   
   # 修改评分/画像逻辑后，从L3开始重建
-  python run_pipeline.py --layer L3
+  python src/pipeline/run_pipeline.py --layer L3
   
   # 仅修改报告模板，从L4开始重建
-  python run_pipeline.py --layer L4
+  python src/pipeline/run_pipeline.py --layer L4
 ```
 
 ### 5.4 --layer 参数说明 ⭐ (v2.2新增)
@@ -964,8 +964,8 @@ STRATEGY_MAP = {
 **效率对比：**
 ```
 修改评分规则后:
-  旧方式: python run_pipeline.py --mode full    ← 需重算全部4层，耗时数小时
-  新方式: python run_pipeline.py --layer L3     ← 仅重算L3+L4，耗时几分钟
+  旧方式: python src/pipeline/run_pipeline.py --mode full    ← 需重算全部4层，耗时数小时
+  新方式: python src/pipeline/run_pipeline.py --layer L3     ← 仅重算L3+L4，耗时几分钟
 ```
 
 ---
@@ -1081,6 +1081,7 @@ User_characteristics_repo/
 │   │
 │   ├── ml/                     # 🤖 机器学习模块
 │   │   ├── __init__.py
+│   │   ├── run_ml.py            # ⭐ ML统一运行入口 (分步骤执行)
 │   │   ├── features.py         # 特征提取 (FeatureExtractor)
 │   │   ├── anomaly.py          # 无监督异常检测 (孤立森林+DBSCAN)
 │   │   ├── classifier.py       # 监督学习分类 (XGBoost多分类)
@@ -1164,16 +1165,16 @@ GEOJSON_FOLDER = "基础数据/省市区围栏"             # GeoJSON围栏文�
 cd src
 
 # 首次运行 (全量重建)
-python run_pipeline.py --mode full
+python src/pipeline/run_pipeline.py --mode full
 
 # 日常增量处理 (推荐)
-python run_pipeline.py
+python src/pipeline/run_pipeline.py
 
 # 仅重新生成报告
-python run_pipeline.py --mode report_only
+python src/pipeline/run_pipeline.py --mode report_only
 
 # 调整评级规则后重跑
-python run_pipeline.py --mode recalculate
+python src/pipeline/run_pipeline.py --mode recalculate
 ```
 
 ### 8.5 验证输出
@@ -1249,7 +1250,7 @@ print(df.columns.tolist())
 
 # 4. 验证阈值系统
 from dynamic_thresholds import DynamicBatteryAnalyzer
-analyzer = DynamicBatteryAnalyzer(baseline_path='src/thresholds_baseline.json')
+analyzer = DynamicBatteryAnalyzer(baseline_path='src/tools/thresholds_baseline.json')
 print(analyzer.store.load())  # 查看当前基准线
 ```
 
@@ -1415,32 +1416,43 @@ ML模型判定（发现未知异常）
 
 ### 11.2 完整工作流
 
+> **推荐使用统一入口 `src/ml/run_ml.py`，自动查找最新文件，一条命令搞定。**
+
+#### 快捷方式 (推荐)
+
+```
+# 一键: 异常检测 + 生成待标注
+python src/ml/run_ml.py full
+
+# 保存标注 + 训练 + 预测
+python src/ml/run_ml.py label save
+python src/ml/run_ml.py train
+python src/ml/run_ml.py predict
+```
+
+#### 分步方式 (完全控制)
+
 ```
 Step 1: 孤立森林异常检测
-  python src/ml/anomaly.py --input ./data/output/lifecycle/user_7d.parquet
+  python src/ml/run_ml.py anomaly
 
 Step 2: 生成待标注文件
-  python src/ml/labeler.py generate --input ./data/output/ml_anomaly/anomaly_report_xxx.csv
+  python src/ml/run_ml.py label generate
 
 Step 3: 人工标注（打开CSV，填写"人工标注"列）
   可选值: 正常 | 改装/超速 | 地摊/储能 | 电池老化 | 暴力驾驶 | 其他异常 | 不确定
 
 Step 4: 保存标注结果
-  python src/ml/labeler.py save --input ./data/output/ml_anomaly/labels/to_label_xxx.csv
+  python src/ml/run_ml.py label save
 
 Step 5: 训练XGBoost分类器
-  python src/ml/classifier.py train
-      --labels ./data/output/ml_anomaly/labels/labeled_data.csv
-      --lifecycle ./data/output/lifecycle/user_7d.parquet
+  python src/ml/run_ml.py train
 
 Step 6: 预测新数据
-  python src/ml/classifier.py predict
-      --lifecycle ./data/output/lifecycle/user_7d.parquet
-      --model ./data/output/ml_anomaly/models/xgb_model_xxx.json
+  python src/ml/run_ml.py predict
 
 Step 7: 查看特征重要性
-  python src/ml/classifier.py importance
-      --model ./data/output/ml_anomaly/models/xgb_model_xxx.json
+  python src/ml/run_ml.py predict --model <模型路径>
 ```
 
 ### 11.3 标注类别
@@ -1598,7 +1610,7 @@ user_7d_full.csv, 用户完全体画像.txt
 | **PROJECT_LOGIC.md** | 本技术文档 | `/PROJECT_LOGIC.md` |
 | README.md | 项目介绍与快速入门 | `/README.md` |
 | config.py | 路径与环境配置 | `/config/config.py` |
-| thresholds_baseline.json | 动态阈值基准线 | `/src/thresholds_baseline.json` |
+| thresholds_baseline.json | 动态阈值基准线 | `/src/tools/thresholds_baseline.json` |
 
 ---
 
