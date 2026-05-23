@@ -1,7 +1,7 @@
-# 两轮车换电用户特征画像系统 - 项目技术文档 v2.7
+# 两轮车换电用户特征画像系统 - 项目技术文档 v2.8
 
-> **最后更新:** 2026-05-17  
-> **代码版本:** v2.7 (项目结构优化：pipeline/ml/tools 三层分目录架构)  
+> **最后更新:** 2026-05-23  
+> **代码版本:** v2.8 (日志系统 + PyArrow Schema 兼容修复 + 使用示例补全)  
 > **项目路径:** `d:\PY代码\用户特征画像\User_characteristics_repo`
 
 ---
@@ -21,6 +21,10 @@
 - [7. 项目文件结构](#7-项目文件结构)
 - [8. 快速开始](#8-快速开始)
 - [9. 常见问题排查](#9-常见问题排查)
+- [10. 参数自动校准](#10-参数自动校准-v24)
+- [11. ML 异常检测](#11-ml-异常检测-v25)
+- [12. 监督学习分类器](#12-监督学习分类器-v26)
+- [附录](#附录)
 
 ---
 
@@ -66,6 +70,8 @@
 | **v2.5** | **2026-05-16** | **ML异常检测：孤立森林 + DBSCAN双模型，发现规则之外的异常** |
 | **v2.6** | **2026-05-16** | **监督学习：XGBoost多分类 + 人工标注工具 + 反馈闭环** |
 | **v2.7** | **2026-05-17** | **项目结构优化：pipeline/ml/tools 三层分目录架构** |
+| **v2.7.1** | **2026-05-17** | **ML统一运行入口(run_ml.py) + 路径全面修复 + ML模型说明文档** |
+| **v2.8** | **2026-05-23** | **日志系统：自动保存运行日志 + PyArrow Schema兼容修复 + 使用示例补全** |
 
 ---
 
@@ -142,6 +148,7 @@
 | **分层解耦** | 每层职责单一，可独立重跑 | L1-L4各层独立函数 |
 | **增量处理** | 仅处理新日期数据，避免重复计算 | incremental模式 |
 | **容错设计** | 单日失败不影响整体，支持断点续跑 | try-except + 日志记录 |
+| **运行日志** | 所有输出自动保存到日志文件，异常记录完整traceback | TeeOutput + logs/ (v2.8) |
 | **可扩展性** | 新增指标只需修改对应层的计算函数 | 各层独立配置参数 |
 | **性能优化** | Parquet列式存储 + 批量处理 + 并行计算 | fact_layer批量处理 |
 
@@ -922,32 +929,33 @@ STRATEGY_MAP = {
                         使用 --skip-incomplete false 可关闭此检查
 
 示例:
-  # 日常增量处理 (最常用)
+  # 日常增量处理（默认模式，最常用）
   python src/pipeline/run_pipeline.py
-  
+  python src/pipeline/run_pipeline.py --mode incremental
+
   # 全量重建
   python src/pipeline/run_pipeline.py --mode full
-  
-  # 仅重跑评级和报告
-  python src/pipeline/run_pipeline.py --mode recalculate
-  
-  # 处理指定日期 (非incremental模式)
+
+  # 刷新聚合（修改L2逻辑后）
+  python src/pipeline/run_pipeline.py --mode refresh
   python src/pipeline/run_pipeline.py --mode refresh --date 2026-04-26
-  
+
+  # 重新评级（修改L3规则后）
+  python src/pipeline/run_pipeline.py --mode recalculate
+  python src/pipeline/run_pipeline.py --mode recalculate --date 2026-04-26
+
+  # 仅生成报告
+  python src/pipeline/run_pipeline.py --mode report_only
+  python src/pipeline/run_pipeline.py --mode report_only --date 2026-04-26
+
+  # 从指定层开始重建
+  python src/pipeline/run_pipeline.py --layer L1
+  python src/pipeline/run_pipeline.py --layer L2
+  python src/pipeline/run_pipeline.py --layer L3
+  python src/pipeline/run_pipeline.py --layer L4
+
   # 关闭数据完整性检查（强制处理不完整数据）
   python src/pipeline/run_pipeline.py --mode incremental --skip-incomplete false
-  
-  # 修改Fact层逻辑后，从L1开始重建
-  python src/pipeline/run_pipeline.py --layer L1
-  
-  # 修改Snapshot层逻辑后，从L2开始重建
-  python src/pipeline/run_pipeline.py --layer L2
-  
-  # 修改评分/画像逻辑后，从L3开始重建
-  python src/pipeline/run_pipeline.py --layer L3
-  
-  # 仅修改报告模板，从L4开始重建
-  python src/pipeline/run_pipeline.py --layer L4
 ```
 
 ### 5.4 --layer 参数说明 ⭐ (v2.2新增)
@@ -967,6 +975,35 @@ STRATEGY_MAP = {
   旧方式: python src/pipeline/run_pipeline.py --mode full    ← 需重算全部4层，耗时数小时
   新方式: python src/pipeline/run_pipeline.py --layer L3     ← 仅重算L3+L4，耗时几分钟
 ```
+
+### 5.5 运行日志 ⭐ (v2.8新增)
+
+每次运行 Pipeline 时，所有的控制台输出会自动保存到 `logs/` 目录下的日志文件中。
+
+**日志文件命名规则:** `pipeline_{mode}_{YYYYMMDD_HHMMSS}.log`
+
+**功能特性:**
+- 所有 `print()` 输出自动写入日志，无需修改现有代码
+- 异常时自动记录完整 `traceback`，便于问题排查
+- 记录运行开始/结束时间、执行模式、总耗时
+- 退出码: 成功 `0`，失败 `1`（适合定时任务脚本判断）
+
+**日志文件示例:**
+```
+📋 日志文件: E:\...\logs\pipeline_incremental_20260523_102105.log
+🕐 开始时间: 2026-05-23 10:21:05
+
+================================================================================
+🚀 执行模式: INCREMENTAL (增量处理)
+================================================================================
+...（所有控制台输出自动写入）...
+
+✅ 流水线执行成功
+🕐 结束时间: 2026-05-23 10:23:54
+📋 日志已保存: E:\...\logs\pipeline_incremental_20260523_102105.log
+```
+
+**日志存储位置:** `{项目根目录}/logs/`
 
 ---
 
@@ -1256,15 +1293,15 @@ print(analyzer.store.load())  # 查看当前基准线
 
 ---
 
-## 9. 参数自动校准 🆕 (v2.4)
+## 10. 参数自动校准 🆕 (v2.4)
 
-### 9.1 概述
+### 10.1 概述
 
 参数自动校准器基于历史数据分布，自动分析并建议最优阈值，是AI辅助参数调优的第一步。
 
-**核心原则：只建议，不自动修改。所有建议需人工审核后手动应用。**
+**核心原则：只建议，不自动修改。所有建议需人工审核后手动应用。
 
-### 9.2 使用方式
+### 10.2 使用方式
 
 ```bash
 # 基于最近30天数据校准所有参数
@@ -1277,7 +1314,7 @@ python src/tools/auto_calibrate.py --days 90
 python src/tools/auto_calibrate.py --days 30 --categories current,score
 ```
 
-### 9.3 校准维度
+### 10.3 校准维度
 
 | 维度 | 校准内容 | 方法 |
 |------|----------|------|
@@ -1289,7 +1326,7 @@ python src/tools/auto_calibrate.py --days 30 --categories current,score
 | 评分体系 | 用电盈亏线、温度、速度 | P75/P90/P95分位数 |
 | 生命周期 | 离线天数、活跃天数 | 出勤分布 |
 
-### 9.4 输出
+### 10.4 输出
 
 校准报告保存在 `{DATA_OUTPUT_ROOT}/calibration/` 目录下，JSON格式，包含：
 - 当前阈值 vs 建议阈值
@@ -1299,9 +1336,9 @@ python src/tools/auto_calibrate.py --days 30 --categories current,score
 
 ---
 
-## 10. ML异常检测 🆕 (v2.5)
+## 11. ML异常检测 🆕 (v2.5)
 
-### 10.1 概述
+### 11.1 概述
 
 在规则判定之外，用无监督机器学习发现"规则抓不到的异常"。包含两个模型：
 
@@ -1312,7 +1349,7 @@ python src/tools/auto_calibrate.py --days 30 --categories current,score
 
 **核心价值：** 规则只能抓"你知道的"异常，ML能发现"你不知道的"异常模式。
 
-### 10.2 使用方式
+### 11.2 使用方式
 
 ```bash
 # 对lifecycle层输出做异常检测
@@ -1325,7 +1362,7 @@ python src/ml/anomaly.py --input ./data/output/lifecycle/lifecycle_YYYYMMDD.parq
 python src/ml/anomaly.py --input ./data/output/lifecycle/lifecycle_YYYYMMDD.parquet --no-save
 ```
 
-### 10.3 特征体系
+### 11.3 特征体系
 
 从lifecycle层提取 **22个原始特征 + 7个衍生特征**，覆盖9个维度：
 
@@ -1353,7 +1390,7 @@ python src/ml/anomaly.py --input ./data/output/lifecycle/lifecycle_YYYYMMDD.parq
 | SOC消耗率 | SOC消耗 / 骑行时长 | >20说明耗电异常快 |
 | 高速骑行密度 | 高速点数 / 骑行次数 | >0.3说明频繁高速 |
 
-### 10.4 双模型交叉验证
+### 11.4 双模型交叉验证
 
 两个模型独立判断，交叉验证提高置信度：
 
@@ -1364,7 +1401,7 @@ python src/ml/anomaly.py --input ./data/output/lifecycle/lifecycle_YYYYMMDD.parq
 | 仅DBSCAN噪声点 | DBSCAN判噪声，孤立森林未识别 | ⭐⭐ 小众群体 |
 | 双模型一致正常 | 两个模型都判正常 | 无需关注 |
 
-### 10.5 异常解释
+### 11.5 异常解释
 
 对每个异常用户，自动输出Top-5偏离特征及偏离方向：
 
@@ -1377,7 +1414,7 @@ python src/ml/anomaly.py --input ./data/output/lifecycle/lifecycle_YYYYMMDD.parq
   换电频率强度: 偏离+3.36σ (偏高)
 ```
 
-### 10.6 输出文件
+### 11.6 输出文件
 
 | 文件 | 内容 |
 |------|------|
@@ -1385,7 +1422,7 @@ python src/ml/anomaly.py --input ./data/output/lifecycle/lifecycle_YYYYMMDD.parq
 | `anomaly_report_*_cross_validation.csv` | 双模型交叉验证统计 |
 | `anomaly_report_*_new_findings.csv` | 模型判异常但规则判正常的用户 |
 
-### 10.7 与规则系统的关系
+### 11.7 与规则系统的关系
 
 ```
 规则判定（快速、可解释）
@@ -1401,9 +1438,9 @@ ML模型判定（发现未知异常）
 
 ---
 
-## 11. 监督学习分类器 🆕 (v2.6)
+## 12. 监督学习分类器 🆕 (v2.6) | 🔗 详见: [ML模型说明.md](ML模型说明.md)
 
-### 11.1 概述
+### 12.1 概述
 
 在无监督异常检测（第三阶段）的基础上，引入人工标注反馈，训练XGBoost监督分类器，实现：
 
@@ -1414,7 +1451,7 @@ ML模型判定（发现未知异常）
 | **低置信度反馈入队** | 模型不确定的自动加入待标注队列 |
 | **模型持久化** | 训练一次，反复使用，随标注数据增多而进化 |
 
-### 11.2 完整工作流
+### 12.2 完整工作流
 
 > **推荐使用统一入口 `src/ml/run_ml.py`，自动查找最新文件，一条命令搞定。**
 
@@ -1455,7 +1492,7 @@ Step 7: 查看特征重要性
   python src/ml/run_ml.py predict --model <模型路径>
 ```
 
-### 11.3 标注类别
+### 12.3 标注类别
 
 | 类别 | 典型特征 | 处置建议 |
 |------|----------|----------|
@@ -1466,7 +1503,7 @@ Step 7: 查看特征重要性
 | **其他异常** | 不属于以上但确实异常 | 人工研判 |
 | **正常** | 模型误判 | 反馈给模型，降低误报 |
 
-### 11.4 反馈闭环
+### 12.4 反馈闭环
 
 ```
 新数据 → 孤立森林初筛 → XGBoost分类
@@ -1481,7 +1518,7 @@ Step 7: 查看特征重要性
          模型越来越准，需人工标注的越来越少
 ```
 
-### 11.5 标注统计
+### 12.5 标注统计
 
 ```bash
 python src/ml/labeler.py stats
@@ -1502,7 +1539,7 @@ python src/ml/labeler.py stats
 模型准确率(排除不确定): 76.5%
 ```
 
-### 11.6 模型文件
+### 12.6 模型文件
 
 | 文件 | 内容 |
 |------|------|
@@ -1531,6 +1568,42 @@ user_7d_full.csv, 用户完全体画像.txt
 ```
 
 ### B. 版本更新日志
+
+**v2.8 (2026-05-23)**
+- ✅ 运行日志系统: `run_pipeline.py` 新增 `TeeOutput` 类和 `setup_pipeline_logging()`，所有控制台输出自动保存到 `logs/` 目录
+- ✅ 异常捕获: `main()` 使用 try-except-finally 包裹，失败时自动记录完整 traceback 到日志，退出码区分成功(0)/失败(1)
+- ✅ PyArrow Schema 兼容: `snapshot_layer.py` `append_to_snapshot()` 修复 `string` vs `large_string` 类型不一致导致的 `concat_tables` 报错
+- ✅ 使用示例补全: `run_pipeline.py` 文档字符串和 README 命令行示例覆盖所有 5 种模式 + `--layer` + `--skip-incomplete`
+
+**v2.7.1 (2026-05-17)**
+- ✅ ML统一运行入口: 新增 `src/ml/run_ml.py`，支持 7 种模式（anomaly / label generate / label save / label stats / train / predict / full）
+- ✅ 路径全面修复: `thresholds_baseline.json` 及所有引用路径适配新目录结构
+- ✅ ML模型说明文档: 新增 `ML模型说明.md`，涵盖工作流、命令参考、技术细节和最佳实践
+- ✅ README更新: 补充 TOC 缺失章节、修复重复编号、完善版本历史
+
+**v2.7 (2026-05-17)**
+- ✅ 项目结构优化: 实施 pipeline/ml/tools 三层分目录架构
+- ✅ 代码重组: 迁移 13 个文件至对应目录，更新 30+ 处 import 路径
+- ✅ `src/pipeline/`: 四层流水线核心代码（fact_layer, snapshot_layer, lifecycle_layer, report_layer）
+- ✅ `src/ml/`: 机器学习模块（features, anomaly, labeler, classifier, run_ml）
+- ✅ `src/tools/`: 工具类模块（dynamic_thresholds, score_layer, score_common, auto_calibrate, gps_parser）
+
+**v2.6 (2026-05-16)**
+- ✅ 监督学习: 新增 XGBoost 多分类器，支持 6 类异常分类
+- ✅ 人工标注工具: 生成待标注清单 → 人工确认 → 保存标注 → 训练模型
+- ✅ 反馈闭环: 标注数据持续积累，模型精度逐步提升
+
+**v2.5 (2026-05-16)**
+- ✅ ML异常检测: 孤立森林 + DBSCAN 双模型交叉验证
+- ✅ 22+7 特征体系: 骑行强度、速度特性、电流功率、温控健康、行为模式 5 大维度
+- ✅ 异常解释: 自动输出 Top-5 偏离特征
+
+**v2.4 (2026-05-16)**
+- ✅ 出勤判定优化: 改为用电量>0 即算出勤
+- ✅ 参数自动校准器: 基于历史数据分布自动建议最优阈值（只建议，不自动修改）
+
+**v2.3 (2026-05-15)**
+- ✅ 数据完整性校验: 自动跳过不完整源数据，不完整日期不计入出勤率计算
 
 **v2.2 (2026-05-11)**
 - ✅ Pipeline优化: 新增 `--layer` 参数，支持从指定层开始重建（L1/L2/L3/L4）
@@ -1607,13 +1680,14 @@ user_7d_full.csv, 用户完全体画像.txt
 
 | 文档 | 说明 | 路径 |
 |------|------|------|
-| **PROJECT_LOGIC.md** | 本技术文档 | `/PROJECT_LOGIC.md` |
-| README.md | 项目介绍与快速入门 | `/README.md` |
+| **README.md** | 项目介绍与快速入门 | `/README.md` |
+| **PROJECT_LOGIC.md** | 技术文档（含各层算法逻辑详解） | `/PROJECT_LOGIC.md` |
+| **ML模型说明.md** | ML模块使用指南（统一入口、工作流、命令参考） | `/ML模型说明.md` |
 | config.py | 路径与环境配置 | `/config/config.py` |
 | thresholds_baseline.json | 动态阈值基准线 | `/src/tools/thresholds_baseline.json` |
 
 ---
 
 > **文档维护说明:**  
-> 本文档随项目迭代同步更新，最后更新时间为 2026-05-10。  
+> 本文档随项目迭代同步更新，最后更新时间为 2026-05-17。  
 > 如发现文档与代码不一致，请以代码实现为准，并及时更新本文档。

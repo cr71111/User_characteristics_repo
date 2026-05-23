@@ -1,0 +1,123 @@
+📋 日志文件: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_refresh_20260523_113658.log
+🕐 开始时间: 2026-05-23 11:36:58
+
+
+================================================================================
+🚀 执行模式: REFRESH (刷新聚合)
+================================================================================
+
+================================================================================
+L2 Snapshot Layer - 用户日级快照层
+================================================================================
+
+📊 处理日期: 2026-04-24
+
+📊 处理日期: 2026-04-25
+
+📊 处理日期: 2026-04-26
+
+📊 处理日期: 2026-04-27
+
+📊 处理日期: 2026-04-28
+
+📊 处理日期: 2026-04-30
+
+📊 处理日期: 2026-05-01
+
+📊 处理日期: 2026-05-02
+
+📊 处理日期: 2026-05-03
+
+📊 处理日期: 2026-05-04
+
+📊 处理日期: 2026-05-05
+
+📊 处理日期: 2026-05-06
+
+📊 处理日期: 2026-05-07
+
+📊 处理日期: 2026-05-08
+
+📊 处理日期: 2026-05-09
+
+📊 处理日期: 2026-05-10
+
+📊 处理日期: 2026-05-11
+
+📊 处理日期: 2026-05-16
+
+📊 处理日期: 2026-05-17
+
+📊 处理日期: 2026-05-18
+
+📊 处理日期: 2026-05-19
+
+📊 处理日期: 2026-05-21
+
+📊 处理日期: 2026-05-22
+✅ L2 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\snapshot/user_daily.parquet (409570 用户日记录)
+
+================================================================================
+L3 Lifecycle Layer - 用户生命周期层
+================================================================================
+
+[1/6] 加载快照数据...
+   加载完成：281,520 条记录
+
+[2/6] 计算7天滚动指标...
+计算7天滚动指标...
+   完成：24,280 个用户
+
+[3/6] 计算月度用电预估...
+   ✅ 月度出勤预估明细已保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\lifecycle\user_monthly_attendance_detail.csv (24,280 用户)
+
+[3.5/6] 加载合约信息...
+📂 正在加载用户合约信息表...
+✅ 用户合约信息表加载完成：共 178769 个用户
+   ✅ 合约信息注入完成
+
+[4/6] 动态阈值计算与用户评分...
+[DynamicThresholds] [CHANGED] Data fingerprint changed or baseline expired, recomputing thresholds
+   Data source changed, rebuilding baseline
+   Baseline expired (33d > 30d)
+[DynamicThresholds] [CALC] Computing quantiles from data...
+
+[Distribution Shift Detection Report]
+  [OK] No significant shift detected
+[DynamicThresholds] [DEBUG] EMA配置状态 - use_ema: True
+[DynamicThresholds] [DEBUG] 分布漂移检测结果 - has_shift: False
+[DynamicThresholds] [EMA] ℹ️ 未检测到分布漂移，保持当前基准线不变
+   评分分类完成
+
+[4.5/6] 计算完全体画像衍生指标...
+
+[5/6] 生命周期状态判定...
+
+[5.5/6] 生成完全体画像文本...
+
+[6/6] 保存结果...
+   L3 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\lifecycle/user_7d.parquet (24,280 用户)
+
+================================================================================
+L4 Report Layer - 报告输出层
+================================================================================
+
+[1/1] 加载生命周期数据...
+   ✅ 加载完成：24,280 个用户
+
+生成报告文件...
+   ✅ 用户明细: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\user_detail.csv
+   ✅ 用户7天滚动全量数据: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\user_7d_full.csv (24,280 用户, 99 字段)
+   ✅ 等级分布: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\level_distribution.csv
+   ✅ 风险告警: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\risk_alerts.csv (8508 用户)
+   ✅ 月度出勤预估明细: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\user_monthly_attendance_detail.csv (24,280 用户)
+   ✅ 漂移报告: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\shift_report.json
+   ✅ 文本摘要: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\summary.txt
+
+✅ L4 Report Layer 完成，报告目录: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports
+
+⏱️  刷新流水线完成，总耗时: 4045.88 秒
+
+✅ 流水线执行成功
+🕐 结束时间: 2026-05-23 12:44:24
+📋 日志已保存: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_refresh_20260523_113658.log

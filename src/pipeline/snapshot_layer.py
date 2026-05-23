@@ -215,7 +215,23 @@ def append_to_snapshot(df_new: pd.DataFrame, path: str) -> None:
                     col,
                     pa.array([None] * len(table_old), type=pa.string())
                 )
-        
+
+        # 修复类型不一致：统一 string / large_string，以旧表类型为准
+        for col in table_old.column_names:
+            old_type = table_old.schema.field(col).type
+            new_type = table_new.schema.field(col).type
+            if old_type != new_type:
+                if pa.types.is_string(old_type) or pa.types.is_large_string(old_type):
+                    target_type = pa.string()
+                    table_old = table_old.set_column(
+                        table_old.column_names.index(col), col,
+                        table_old.column(col).cast(target_type)
+                    )
+                    table_new = table_new.set_column(
+                        table_new.column_names.index(col), col,
+                        table_new.column(col).cast(target_type)
+                    )
+
         df = pa.concat_tables([table_old, table_new]).to_pandas()
         df = df.drop_duplicates(subset=['用户id', '统计日期'], keep='last')
         table_new = pa.Table.from_pandas(df)

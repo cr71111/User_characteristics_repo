@@ -11,20 +11,80 @@ Run Pipeline - 数据流水线主入口
 - report_only:  L4，仅重新生成报告文件
 
 使用示例：
-    python src/pipeline/run_pipeline.py --mode incremental --date 2026-04-19
+    # 日常增量处理（默认模式）
+    python src/pipeline/run_pipeline.py
+    python src/pipeline/run_pipeline.py --mode incremental
+
+    # 全量重建
     python src/pipeline/run_pipeline.py --mode full
+
+    # 刷新聚合（修改L2逻辑后）
+    python src/pipeline/run_pipeline.py --mode refresh
+    python src/pipeline/run_pipeline.py --mode refresh --date 2026-04-19
+
+    # 重新评级（修改L3规则后）
     python src/pipeline/run_pipeline.py --mode recalculate
+    python src/pipeline/run_pipeline.py --mode recalculate --date 2026-04-19
+
+    # 仅生成报告
+    python src/pipeline/run_pipeline.py --mode report_only
     python src/pipeline/run_pipeline.py --mode report_only --date 2026-04-19
+
+    # 从指定层开始重建
+    python src/pipeline/run_pipeline.py --layer L1
+    python src/pipeline/run_pipeline.py --layer L2
+    python src/pipeline/run_pipeline.py --layer L3
+    python src/pipeline/run_pipeline.py --layer L4
+
+    # 关闭数据完整性检查
+    python src/pipeline/run_pipeline.py --mode incremental --skip-incomplete false
 """
 
 import os
 import sys
 import argparse
+import io
+import traceback
 from datetime import datetime
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
+
+LOGS_DIR = os.path.join(project_root, 'logs')
+
+
+class TeeOutput:
+    """同时输出到控制台和日志文件"""
+
+    def __init__(self, log_path: str):
+        self.terminal = sys.stdout
+        self.log = io.open(log_path, 'a', encoding='utf-8')
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+
+    def flush(self):
+        self.terminal.flush()
+        self.log.flush()
+
+    def close(self):
+        self.log.close()
+        sys.stdout = self.terminal
+
+
+def setup_pipeline_logging(mode: str) -> str:
+    """设置日志：将所有 stdout 输出同时写入日志文件
+
+    Returns:
+        str: 日志文件路径
+    """
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_path = os.path.join(LOGS_DIR, f'pipeline_{mode}_{timestamp}.log')
+    sys.stdout = TeeOutput(log_path)
+    return log_path
 
 src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if src_dir not in sys.path:
@@ -280,20 +340,45 @@ def main():
 
     args = parser.parse_args()
 
-    if args.layer:
-        run_from_layer(args.layer, target_date=args.date, skip_incomplete=args.skip_incomplete)
-        return
+    # 确定日志标签
+    log_mode = f"L{args.layer}" if args.layer else args.mode
+    log_path = setup_pipeline_logging(log_mode)
 
-    mode_map = {
-        'full': run_full_pipeline,
-        'incremental': run_incremental,
-        'refresh': run_refresh,
-        'recalculate': run_recalculate,
-        'report_only': run_report_only,
-    }
+    exit_code = 0
+    try:
+        print(f"📋 日志文件: {log_path}")
+        print(f"🕐 开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print()
 
-    pipeline_func = mode_map[args.mode]
-    pipeline_func(target_date=args.date, skip_incomplete=args.skip_incomplete)
+        if args.layer:
+            run_from_layer(args.layer, target_date=args.date, skip_incomplete=args.skip_incomplete)
+        else:
+            mode_map = {
+                'full': run_full_pipeline,
+                'incremental': run_incremental,
+                'refresh': run_refresh,
+                'recalculate': run_recalculate,
+                'report_only': run_report_only,
+            }
+            pipeline_func = mode_map[args.mode]
+            pipeline_func(target_date=args.date, skip_incomplete=args.skip_incomplete)
+
+        print(f"\n✅ 流水线执行成功")
+
+    except Exception as e:
+        exit_code = 1
+        print(f"\n❌ 流水线执行失败: {e}")
+        print(traceback.format_exc())
+
+    finally:
+        print(f"🕐 结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"📋 日志已保存: {log_path}")
+
+        # 恢复 stdout 并关闭日志文件
+        if hasattr(sys.stdout, 'close'):
+            sys.stdout.close()
+
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
