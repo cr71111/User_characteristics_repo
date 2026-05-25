@@ -26,10 +26,11 @@ USER_BEHAVIOR_FOLDER = "用户行为习惯/用户特征画像"
 BATTERY_STATUS_FOLDER = f"{USER_BEHAVIOR_FOLDER}/每日用户数据汇总"
 EXPORT_PATH_BATTERY_STATUS_DAILY = get_full_path(f"{BATTERY_STATUS_FOLDER}")
 
-GEOJSON_FOLDER = "基础数据/省市区围栏"
-EXPORT_FILE_PROVINCE_GEOJSON = get_full_path(f"{GEOJSON_FOLDER}/中国_省.geojson")
-EXPORT_FILE_CITY_GEOJSON = get_full_path(f"{GEOJSON_FOLDER}/中国_市.geojson")
-EXPORT_FILE_DISTRICT_GEOJSON = get_full_path(f"{GEOJSON_FOLDER}/中国_县.geojson")
+# 省市区围栏（项目内 data/ 目录）
+DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
+EXPORT_FILE_PROVINCE_GEOJSON = os.path.join(DATA_DIR, "中国_省.geojson")
+EXPORT_FILE_CITY_GEOJSON = os.path.join(DATA_DIR, "中国_市.geojson")
+EXPORT_FILE_DISTRICT_GEOJSON = os.path.join(DATA_DIR, "中国_县.geojson")
 
 # 合约信息
 CONTRACT_FOLDER = "合约信息"
