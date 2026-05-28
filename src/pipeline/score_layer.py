@@ -343,20 +343,20 @@ def score_and_classify(
     df['用户等级_动态'] = result_level
 
     # ── D. 策略建议生成（向量化优化 + 差异化）────────────────────────────
-    def _get_strategy(level, customer_type, work_pattern):
-        """根据用户等级 + 客户形态 + 工作特点生成差异化策略"""
+    def _get_strategy(level, customer_type, vehicle_type, work_pattern):
+        """根据用户等级 + 客户形态 + 车辆形态 + 工作特点生成差异化策略"""
         base_strategy = {
             '优质用户':'留存激励','良好用户':'维持服务',
             '普通用户':'引导升级','高损耗用户':'限制预警',
             '暴力':'清退处理','观察期':'新手引导','沉默用户':'激活唤醒'
         }.get(level, '维持服务')
         
+        if vehicle_type == '改装/超速车':
+            return '风险用户核查'
         if customer_type == '专送骑手' and level in ('普通用户', '良好用户'):
             return '专送骑手关怀'
         if customer_type == '地摊/储能':
             return '非正常用电核查'
-        if customer_type == '改装/超速车':
-            return '风险用户核查'
         if customer_type == '众包骑手' and level == '普通用户':
             return '众包骑手引导'
         if work_pattern in ('习惯晚上',) and level in ('高损耗用户',):
@@ -365,10 +365,11 @@ def score_and_classify(
         return base_strategy
     
     df['策略建议'] = [
-        _get_strategy(lv, ct, wp)
-        for lv, ct, wp in zip(
+        _get_strategy(lv, ct, vt, wp)
+        for lv, ct, vt, wp in zip(
             df['用户等级_动态'].values,
             df.get('客户形态_综合_7d', pd.Series('未知', index=df.index)).fillna('未知').values,
+            df.get('车辆形态_7d', pd.Series('未知', index=df.index)).fillna('未知').values,
             df.get('近7d工作特点', pd.Series('', index=df.index)).fillna('').values
         )
     ]

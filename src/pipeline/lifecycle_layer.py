@@ -10,6 +10,7 @@ L3 Lifecycle Layer - 用户生命周期层
 
 import os
 import sys
+import logging
 import warnings
 from typing import Optional, Tuple
 
@@ -18,6 +19,8 @@ import numpy as np
 from tqdm import tqdm
 
 warnings.filterwarnings('ignore')
+
+logger = logging.getLogger(__name__)
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
@@ -287,15 +290,32 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
         ('当日最高速度_kmh', '近7d最高速度_kmh'),
         ('当日最大电流_A', '近7d最大电流_A'),
         ('当日最高温度_℃', '近7d最高温度_℃'),
+        ('当日峰值功率_W', '近7d峰值功率_W'),
         ('最大单合约活动半径_km', '近7d最大活动半径_km'),
         ('R90活动半径_km', '近7d_R90活动半径_km'),
         ('最大凸包覆盖面积_km2', '近7d凸包覆盖面积_km2'),
         ('最大单次出行距离_km', '近7d最大单次出行距离_km'),
+        ('当日跨区域转移次数', '近7d最大跨区域转移次数'),
     ]
     for raw_col, roll_col in max_cols:
         if raw_col in complete_group.columns:
             val = complete_group[raw_col].max()
             res[roll_col] = round(val, 2) if pd.notna(val) else 0
+        else:
+            res[roll_col] = 0
+
+    # 新增特征聚合（文档标准：众包/专送判定增强）
+    avg_cols_7d = [
+        ('当日上线时间熵值', '近7d平均上线时间熵值'),
+        ('当日骑行时段集中度', '近7d平均骑行时段集中度'),
+        ('当日路线曲折系数', '近7d平均路线曲折系数'),
+        ('当日速度变异系数', '近7d平均速度变异系数'),
+        ('当日静止时长占比', '近7d平均静止时长占比'),
+    ]
+    for raw_col, roll_col in avg_cols_7d:
+        if raw_col in complete_group.columns:
+            val = complete_group[raw_col].mean()
+            res[roll_col] = round(val, 3) if pd.notna(val) else 0
         else:
             res[roll_col] = 0
 
@@ -372,39 +392,147 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
     }])
     res['近7d工作特点'] = get_work_pattern(pattern_group)
 
-    if '客户形态_综合' in complete_group.columns:
-        type_values = complete_group['客户形态_综合'].dropna()
-        if len(type_values) > 0:
-            unique_types = type_values.unique()
-            if '改装/超速车' in unique_types:
-                res['客户形态_综合_7d'] = '改装/超速车'
-            elif '地摊/储能' in unique_types:
-                res['客户形态_综合_7d'] = '地摊/储能'
+    # -------------------------- 车辆形态_7d --------------------------
+    if '车辆形态_综合' in complete_group.columns:
+        vt_values = complete_group['车辆形态_综合'].dropna()
+        if len(vt_values) > 0:
+            vt_unique = vt_values.unique()
+            if '改装/超速车' in vt_unique:
+                res['车辆形态_7d'] = '改装/超速车'
+            elif '地摊/储能' in vt_unique:
+                res['车辆形态_7d'] = '地摊/储能'
             else:
-                res['客户形态_综合_7d'] = type_values.value_counts().index[0]
+                res['车辆形态_7d'] = vt_values.value_counts().index[0]
         else:
-            res['客户形态_综合_7d'] = "数据不足"
+            res['车辆形态_7d'] = "数据不足"
     else:
-        res['客户形态_综合_7d'] = "数据不足"
+        res['车辆形态_7d'] = "数据不足"
 
-    type_desc_7d = ""
-    current_type_7d = res.get('客户形态_综合_7d', '数据不足')
-    avg_speed_7d = res.get('近7d平均骑行速度_kmh', 0)
+    vt_desc_7d = ""
+    vt_7d = res.get('车辆形态_7d', '数据不足')
     max_speed_7d = res.get('近7d最高速度_kmh', 0)
     avg_current_7d = res.get('近7d平均骑行电流_A', 0)
+    peak_power_7d = res.get('近7d峰值功率_W', 0)
+    peak_power_str = f"{float(peak_power_7d):.0f}" if peak_power_7d is not None else "0"
+
+    if vt_7d == "改装/超速车":
+        vt_desc_7d = f"行驶特征异常（近7天最高速度{max_speed_7d}km/h，平均骑行电流{avg_current_7d}A，峰值功率{peak_power_str}W），远超正常电动车水平，存在改装或超速嫌疑"
+    elif vt_7d == "电动自行车":
+        vt_desc_7d = f"符合电动自行车国标（最大车速≤25km/h），近7天实测最高{max_speed_7d}km/h"
+    elif vt_7d == "电动轻便摩托车":
+        vt_desc_7d = f"符合电动轻便摩托车国标（最大车速≤50km/h），近7天实测最高{max_speed_7d}km/h"
+    elif vt_7d == "电动摩托车":
+        vt_desc_7d = f"符合电动摩托车国标（最大车速>50km/h），近7天实测最高{max_speed_7d}km/h"
+    elif vt_7d == "地摊/储能":
+        vt_desc_7d = "非移动用电场景，车辆形态不适用"
+    else:
+        vt_desc_7d = "无有效骑行数据，无法判定车辆形态"
+    res['车辆形态_7d说明'] = vt_desc_7d
+
+    # -------------------------- 客户形态_7d（含空间维度 + 行为特征众包/专送重定义）--------------------------
+    hull_area_7d = res.get('近7d凸包覆盖面积_km2', 0)
+    r90_7d = res.get('近7d_R90活动半径_km', 0)
     avg_ride_hour_7d = res.get('近7d单合约日均骑行时长_h', 0)
     peak_ratio_7d = res.get('近7d高峰骑行占比', 0)
     avg_mileage_7d = res.get('近7d单合约日均行驶里程_km', 0)
     avg_idle_discharge_7d = res.get('近7d单合约日均怠速放电_h', 0)
 
-    if current_type_7d == "改装/超速车":
-        type_desc_7d = f"行驶特征异常（近7天最高速度{max_speed_7d}km/h，平均骑行电流{avg_current_7d}A），远超普通两轮车水平，存在改装或超速嫌疑"
-    elif current_type_7d == "地摊/储能":
+    # 新增：文档标准特征
+    time_entropy_7d = res.get('近7d平均上线时间熵值', 0)
+    hour_concentration_7d = res.get('近7d平均骑行时段集中度', 0)
+    detour_ratio_7d = res.get('近7d平均路线曲折系数', 0)
+    speed_cv_7d = res.get('近7d平均速度变异系数', 0)
+    cross_region_7d = res.get('近7d最大跨区域转移次数', 0)
+    idle_ratio_7d = res.get('近7d平均静止时长占比', 0)
+
+    # 空间集中度阈值（专送骑手活动范围小且集中，众包骑手跨区域大范围移动）
+    SPATIAL_CONCENTRATED_R90 = 5.0
+    SPATIAL_CONCENTRATED_HULL = 20.0
+
+    # 行为特征阈值（文档标准）
+    TIME_ENTROPY_LOW = 3.5  # 专送上线时间熵值低（规律性强）
+    DETOUR_RATIO_LOW = 2.0  # 专送路线曲折系数低（顺路）
+    SPEED_CV_LOW = 0.4  # 专送速度变异系数低（稳定）
+    CROSS_REGION_LOW = 3  # 专送跨区域转移少
+    IDLE_RATIO_LOW = 0.5  # 专送静止时长占比低（持续派单）
+
+    # 调试日志：记录判定输入特征
+    logger.debug(f"[客户形态判定] 用户{user_id} 输入特征: "
+                 f"日均骑行时长={avg_ride_hour_7d:.2f}h, 高峰占比={peak_ratio_7d:.2f}, "
+                 f"R90半径={r90_7d:.2f}km, 凸包面积={hull_area_7d:.2f}km², "
+                 f"时间熵={time_entropy_7d:.3f}, 路线曲折系数={detour_ratio_7d:.2f}, "
+                 f"速度变异系数={speed_cv_7d:.3f}, 跨区域转移={cross_region_7d}次, "
+                 f"静止占比={idle_ratio_7d:.3f}")
+
+    if '客户形态_综合' in complete_group.columns:
+        type_values = complete_group['客户形态_综合'].dropna()
+        if len(type_values) > 0:
+            unique_types = type_values.unique()
+            if '地摊/储能' in unique_types:
+                res['客户形态_综合_7d'] = '地摊/储能'
+                logger.info(f"[客户形态判定] 用户{user_id} → 地摊/储能 (日级数据包含地摊/储能标签)")
+            else:
+                daily_modal_type = type_values.value_counts().index[0]
+                logger.debug(f"[客户形态判定] 用户{user_id} 日级众数类型={daily_modal_type}")
+                # 基于7天聚合数据重新判定众包/专送（加入空间维度 + 行为特征）
+                if daily_modal_type == '专送骑手':
+                    is_spatial_concentrated = (hull_area_7d > 0 and hull_area_7d <= SPATIAL_CONCENTRATED_HULL) or \
+                                              (r90_7d > 0 and r90_7d <= SPATIAL_CONCENTRATED_R90)
+                    is_behavior_concentrated = (time_entropy_7d <= TIME_ENTROPY_LOW) and \
+                                               (detour_ratio_7d <= DETOUR_RATIO_LOW) and \
+                                               (speed_cv_7d <= SPEED_CV_LOW)
+                    
+                    logger.debug(f"[客户形态判定] 用户{user_id} 专送候选判定: "
+                                 f"空间集中={is_spatial_concentrated}(凸包{hull_area_7d:.1f}≤{SPATIAL_CONCENTRATED_HULL}, R90{r90_7d:.1f}≤{SPATIAL_CONCENTRATED_R90}), "
+                                 f"行为集中={is_behavior_concentrated}(熵{time_entropy_7d:.2f}≤{TIME_ENTROPY_LOW}, 曲折{detour_ratio_7d:.2f}≤{DETOUR_RATIO_LOW}, 速度CV{speed_cv_7d:.3f}≤{SPEED_CV_LOW})")
+                    
+                    if avg_ride_hour_7d >= 4.0 and peak_ratio_7d >= 0.3 and is_spatial_concentrated and is_behavior_concentrated:
+                        res['客户形态_综合_7d'] = '专送骑手'
+                        logger.info(f"[客户形态判定] 用户{user_id} → 专送骑手 (日均{avg_ride_hour_7d:.1f}h, 高峰{peak_ratio_7d:.0%}, 空间集中, 行为规律)")
+                    elif avg_ride_hour_7d >= 2.0 and peak_ratio_7d >= 0.15:
+                        res['客户形态_综合_7d'] = '众包骑手'
+                        logger.info(f"[客户形态判定] 用户{user_id} → 众包骑手 (日均{avg_ride_hour_7d:.1f}h, 高峰{peak_ratio_7d:.0%}, 空间/行为未达标)")
+                    else:
+                        res['客户形态_综合_7d'] = '普通骑手'
+                        logger.info(f"[客户形态判定] 用户{user_id} → 普通骑手 (日均{avg_ride_hour_7d:.1f}h<2h 或 高峰{peak_ratio_7d:.0%}<15%)")
+                elif daily_modal_type == '众包骑手':
+                    is_spatial_dispersed = (hull_area_7d <= 0 or hull_area_7d > SPATIAL_CONCENTRATED_HULL) or \
+                                           (r90_7d <= 0 or r90_7d > SPATIAL_CONCENTRATED_R90)
+                    is_behavior_dispersed = (time_entropy_7d > TIME_ENTROPY_LOW) or \
+                                            (detour_ratio_7d > DETOUR_RATIO_LOW) or \
+                                            (cross_region_7d > CROSS_REGION_LOW)
+                    
+                    logger.debug(f"[客户形态判定] 用户{user_id} 众包候选判定: "
+                                 f"空间分散={is_spatial_dispersed}(凸包{hull_area_7d:.1f}>{SPATIAL_CONCENTRATED_HULL}或R90{r90_7d:.1f}>{SPATIAL_CONCENTRATED_R90}), "
+                                 f"行为分散={is_behavior_dispersed}(熵{time_entropy_7d:.2f}>{TIME_ENTROPY_LOW}, 曲折{detour_ratio_7d:.2f}>{DETOUR_RATIO_LOW}, 转移{cross_region_7d}>{CROSS_REGION_LOW})")
+                    
+                    if avg_ride_hour_7d >= 4.0 and peak_ratio_7d >= 0.3 and not is_spatial_dispersed and not is_behavior_dispersed:
+                        res['客户形态_综合_7d'] = '专送骑手'
+                        logger.info(f"[客户形态判定] 用户{user_id} → 专送骑手 (日级众包但7天特征符合专送: 日均{avg_ride_hour_7d:.1f}h, 高峰{peak_ratio_7d:.0%}, 空间集中, 行为规律)")
+                    elif avg_ride_hour_7d >= 2.0 and peak_ratio_7d >= 0.15:
+                        res['客户形态_综合_7d'] = '众包骑手'
+                        logger.info(f"[客户形态判定] 用户{user_id} → 众包骑手 (日均{avg_ride_hour_7d:.1f}h, 高峰{peak_ratio_7d:.0%}, 空间/行为分散)")
+                    else:
+                        res['客户形态_综合_7d'] = '普通骑手'
+                        logger.info(f"[客户形态判定] 用户{user_id} → 普通骑手 (日均{avg_ride_hour_7d:.1f}h<2h 或 高峰{peak_ratio_7d:.0%}<15%)")
+                else:
+                    res['客户形态_综合_7d'] = daily_modal_type
+        else:
+            res['客户形态_综合_7d'] = "数据不足"
+            logger.debug(f"[客户形态判定] 用户{user_id} → 数据不足 (无有效日级客户形态数据)")
+    else:
+        res['客户形态_综合_7d'] = "数据不足"
+        logger.debug(f"[客户形态判定] 用户{user_id} → 数据不足 (complete_group无客户形态_综合列)")
+
+    type_desc_7d = ""
+    current_type_7d = res.get('客户形态_综合_7d', '数据不足')
+
+    if current_type_7d == "地摊/储能":
         type_desc_7d = f"非移动用电特征明显（近7天日均骑行{avg_ride_hour_7d}小时，日均怠速放电{avg_idle_discharge_7d}小时），放电以静止状态为主，疑似地摊供电或储能场景"
     elif current_type_7d == "专送骑手":
-        type_desc_7d = f"工作特征显著（近7天日均骑行{avg_ride_hour_7d:.1f}小时，高峰骑行占比{peak_ratio_7d*100:.0f}%），工作时长稳定且午晚高峰高度活跃，符合专送骑手画像"
+        type_desc_7d = f"工作特征显著（近7天日均骑行{avg_ride_hour_7d:.1f}小时，高峰骑行占比{peak_ratio_7d*100:.0f}%），活动范围集中（R90半径{r90_7d:.1f}km，凸包面积{hull_area_7d:.1f}km²），行为规律（时间熵{time_entropy_7d:.2f}，路线曲折系数{detour_ratio_7d:.2f}），符合专送骑手画像"
     elif current_type_7d == "众包骑手":
-        type_desc_7d = f"具有兼职骑手特征（近7天日均骑行{avg_ride_hour_7d:.1f}小时，高峰骑行占比{peak_ratio_7d*100:.0f}%），高峰时段有一定活跃度"
+        type_desc_7d = f"具有兼职骑手特征（近7天日均骑行{avg_ride_hour_7d:.1f}小时，高峰骑行占比{peak_ratio_7d*100:.0f}%），活动范围分散（R90半径{r90_7d:.1f}km，凸包面积{hull_area_7d:.1f}km²），行为灵活（时间熵{time_entropy_7d:.2f}，跨区域转移{cross_region_7d}次），符合众包骑手画像"
     elif current_type_7d == "标准骑手":
         type_desc_7d = f"骑行行为规律（近7天日均里程{avg_mileage_7d}km，日均骑行{avg_ride_hour_7d:.1f}小时），属于标准日常使用场景"
     elif current_type_7d == "普通骑手":
@@ -416,8 +544,8 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
 
     latest_record_date = pd.to_datetime(group['统计日期'].max())
     
-    today = pd.Timestamp.now().normalize()
-    days_since_last_seen = (today - latest_record_date).days
+    # 以数据窗口最新日期为基准，而非 today，避免离线天数随报告日期自动增长
+    days_since_last_seen = (latest_date - latest_record_date).days
     
     if days_since_last_seen >= LONG_TERM_OFFLINE_THRESHOLD_DAYS:
         res['设备状态监控'] = f"异常(离线{days_since_last_seen}天)"
@@ -427,6 +555,27 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
         res['设备状态监控'] = "正常在线"
 
     return res
+
+
+def log_type_distribution_summary(df_results: pd.DataFrame):
+    """输出客户形态分布统计摘要，方便排查分类比例异常"""
+    if '客户形态_综合_7d' in df_results.columns:
+        type_counts = df_results['客户形态_综合_7d'].value_counts()
+        logger.info(f"[客户形态分布统计] 总用户数={len(df_results)}")
+        for ctype, cnt in type_counts.items():
+            logger.info(f"  {ctype}: {cnt}人 ({cnt/len(df_results)*100:.1f}%)")
+        
+        # 输出特征均值对比
+        if '近7d平均上线时间熵值' in df_results.columns:
+            zhuan = df_results[df_results['客户形态_综合_7d'] == '专送骑手']
+            zhong = df_results[df_results['客户形态_综合_7d'] == '众包骑手']
+            if len(zhuan) > 0 and len(zhong) > 0:
+                logger.info(f"[特征对比] 专送 vs 众包:")
+                logger.info(f"  时间熵: 专送={zhuan['近7d平均上线时间熵值'].mean():.3f}, 众包={zhong['近7d平均上线时间熵值'].mean():.3f}")
+                logger.info(f"  路线曲折系数: 专送={zhuan['近7d平均路线曲折系数'].mean():.2f}, 众包={zhong['近7d平均路线曲折系数'].mean():.2f}")
+                logger.info(f"  速度变异系数: 专送={zhuan['近7d平均速度变异系数'].mean():.3f}, 众包={zhong['近7d平均速度变异系数'].mean():.3f}")
+                logger.info(f"  跨区域转移次数: 专送={zhuan['近7d最大跨区域转移次数'].mean():.1f}, 众包={zhong['近7d最大跨区域转移次数'].mean():.1f}")
+                logger.info(f"  静止时长占比: 专送={zhuan['近7d平均静止时长占比'].mean():.3f}, 众包={zhong['近7d平均静止时长占比'].mean():.3f}")
 
 
 # 月度用电预估参数
@@ -738,6 +887,9 @@ def process_lifecycle_layer(target_date: Optional[str] = None) -> str:
         print("无有效7天滚动数据")
         return ""
     print(f"   完成：{len(df_rolling):,} 个用户")
+
+    # 输出客户形态分布统计摘要
+    log_type_distribution_summary(df_rolling)
 
     print("\n[3/6] 计算月度用电预估...")
     df_rolling, df_attendance_detail = calc_user_monthly_attendance(df_rolling, df_snapshot)

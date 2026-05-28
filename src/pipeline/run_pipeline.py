@@ -62,7 +62,10 @@ class TeeOutput:
         self.log = io.open(log_path, 'a', encoding='utf-8')
 
     def write(self, message):
-        self.terminal.write(message)
+        try:
+            self.terminal.write(message)
+        except UnicodeEncodeError:
+            self.terminal.write(message.encode(self.terminal.encoding or 'utf-8', errors='replace').decode(self.terminal.encoding or 'utf-8', errors='replace'))
         self.log.write(message)
 
     def flush(self):

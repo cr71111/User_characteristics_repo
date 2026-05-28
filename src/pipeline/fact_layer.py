@@ -18,6 +18,7 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 from scipy.spatial import ConvexHull
+from sklearn.cluster import DBSCAN
 from tqdm import tqdm
 
 warnings.filterwarnings('ignore')
@@ -59,9 +60,14 @@ STORAGE_DISCHARGE_RATIO_THRESHOLD = 3.0
 STORAGE_MIN_DISCHARGE_HOUR = 2.0
 STORAGE_RIDE_DURATION_RATIO = 0.1
 
-# 改装/超速判定阈值（严格按照旧脚本）
+# 车辆形态判定阈值（国标 + 改装检测）
+EBIKE_MAX_SPEED = 25
+LIGHT_MOTO_MAX_SPEED = 50
+# 改装/超速判定阈值
 MODIFY_SPEED_THRESHOLD = 50
 MODIFY_CURRENT_THRESHOLD = 24
+MODIFY_CURRENT_HIGH = 40
+MODIFY_PEAK_POWER_W = 8000
 
 # 数据有效性阈值（严格按照旧脚本）
 MAX_VALID_CURRENT = 150.0
@@ -287,8 +293,14 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             # 速度分位
             'P50骑行速度_kmh': 0.0, 'P90骑行速度_kmh': 0.0,
             '夜间骑行均速_kmh': 0.0, '高速骑行点数(>40kmh)': 0,
+            # 功率与车辆形态
+            '骑行平均功率_W': 0.0, '峰值功率_W': 0.0,
+            '车辆形态': '数据不足', '车辆形态说明': '',
             # 骑行时刻
             '最早骑行时刻_h': -1, '最晚骑行时刻_h': -1, '主要骑行时段': '无数据',
+            # 新增：文档标准特征（众包/专送判定增强）
+            '上线时间熵值': 0.0, '骑行时段集中度': 0.0, '路线曲折系数': 0.0,
+            '速度变异系数': 0.0, '跨区域转移次数': 0, '静止时长占比': 0.0,
         }
 
         total_riding_hours = 0.0
@@ -667,6 +679,14 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             res['单行程最大电流变异系数'] = round(max_trip_current_cv, 3)
             res['电流异常用户'] = is_current_abnormal
 
+            # -------------------------- 车辆功率计算 --------------------------
+            battery_id_str = res.get('电池id', '')
+            std_voltage = DEFAULT_VOLTAGE
+            if battery_id_str and battery_id_str.isdigit():
+                std_voltage = battery_voltage_map.get(int(battery_id_str), DEFAULT_VOLTAGE)
+            res['骑行平均功率_W'] = round(std_voltage * riding_avg_current, 1)
+            res['峰值功率_W'] = round(std_voltage * max_current, 1)
+
             if not riding_current_data.empty:
                 res['电流>60A次数'] = (riding_current_data['电流'] > NORMAL_CURRENT_THRESHOLD).sum()
                 res['电流>80A次数'] = ((riding_current_data['电流'] > HIGH_CURRENT_THRESHOLD) & (riding_current_data['电流'] < OVER_CURRENT_THRESHOLD)).sum()
@@ -780,6 +800,7 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
 
             # -------------------------- 13. 工作时长覆盖计算 --------------------------
             riding_time_data = group.loc[group['骑行状态'] == 1, '时间戳']
+            riding_times = pd.Series(dtype='float64')
             if len(riding_time_data) > 0:
                 work_span_hours = (riding_time_data.max() - riding_time_data.min()) / 3600
                 res['工作时长覆盖(小时)'] = round(work_span_hours, 1)
@@ -804,15 +825,101 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
                     else:
                         res['主要骑行时段'] = '平峰'
 
+            # -------------------------- 13.2. 新增特征计算（文档标准：众包/专送判定增强）--------------------------
+            # 1. 上线时间熵值（基于GPS记录的小时分布，专送熵低、众包熵高）
+            all_hours = pd.to_datetime(group['时间戳'], unit='s', errors='coerce').dt.hour.dropna()
+            if len(all_hours) > 0:
+                hour_counts = all_hours.value_counts()
+                hour_probs = hour_counts / hour_counts.sum()
+                time_entropy = -np.sum(hour_probs * np.log2(hour_probs + 1e-10))
+                res['上线时间熵值'] = round(time_entropy, 3)
+
+            # 2. 骑行时段集中度（骑行小时的标准差，专送集中、众包分散）
+            if len(riding_times) > 0:
+                riding_hours_dist = riding_times.dt.hour
+                hour_std = riding_hours_dist.std()
+                res['骑行时段集中度'] = round(hour_std, 2)
+
+            # 3. 路线曲折系数（实际行驶距离 / 起点到终点直线距离，专送顺路、众包曲折）
+            if total_distance > 0 and len(group) >= 2:
+                first_lat, first_lon = group['纬度'].iloc[0], group['经度'].iloc[0]
+                last_lat, last_lon = group['纬度'].iloc[-1], group['经度'].iloc[-1]
+                straight_distance = haversine(first_lat, first_lon, last_lat, last_lon, 'km')
+                if straight_distance > 0.1:
+                    detour_ratio = total_distance / straight_distance
+                    res['路线曲折系数'] = round(detour_ratio, 2)
+                else:
+                    res['路线曲折系数'] = 1.0
+
+            # 4. 速度变异系数（专送稳定、众包波动大）
+            if len(riding_speed_data) > 1:
+                speeds = riding_speed_data['速度'].values
+                speed_std = np.std(speeds)
+                speed_mean = np.mean(speeds)
+                speed_cv = speed_std / speed_mean if speed_mean > 0.1 else 0.0
+                res['速度变异系数'] = round(speed_cv, 3)
+
+            # 5. 跨区域转移次数（基于GPS位置聚类变化，专送少、众包多）
+            if n >= 10:
+                gps_points = group[['纬度', '经度']].dropna().values
+                if len(gps_points) >= 3:
+                    coords_rad = np.radians(gps_points)
+                    db = DBSCAN(eps=0.001, min_samples=3, metric='haversine').fit(coords_rad)
+                    n_clusters = len(set(db.labels_)) - (1 if -1 in db.labels_ else 0)
+                    res['跨区域转移次数'] = max(0, n_clusters - 1)
+
+            # 6. 静止时长占比（众包等待抢单时间长）
+            if n >= 2:
+                total_time_span = (group['时间戳'].iloc[-1] - group['时间戳'].iloc[0]) / 3600
+                if total_time_span > 0:
+                    idle_ratio = 1.0 - (total_riding_hours / total_time_span)
+                    res['静止时长占比'] = round(max(0, idle_ratio), 3)
+
             # -------------------------- 13.5. 数据有效性标记 --------------------------
             energy_data_valid = (res.get('总用电量(kWh)', 0) > 0)
 
-            # -------------------------- 14. 客户形态判定 --------------------------
+            # -------------------------- 14. 车辆形态判定（国标速度分级 + 改装检测）--------------------------
             has_real_ride = (total_riding_hours >= VALID_RIDE_MIN_HOUR) and (total_distance > 0)
             no_real_ride = not has_real_ride
             valid_gps_enough = (n >= STORAGE_MIN_VALID_GPS_POINTS)
             avg_speed = total_distance / total_riding_hours if total_riding_hours > 0.01 else 0
 
+            # Step 1: 基于实测最高速度进行国标分级
+            if max_speed <= EBIKE_MAX_SPEED:
+                vehicle_type = "电动自行车"
+                vehicle_desc = f"符合电动自行车国标（最大车速≤{EBIKE_MAX_SPEED}km/h），实测最高{max_speed}km/h"
+            elif max_speed <= LIGHT_MOTO_MAX_SPEED:
+                vehicle_type = "电动轻便摩托车"
+                vehicle_desc = f"符合电动轻便摩托车国标（最大车速≤{LIGHT_MOTO_MAX_SPEED}km/h），实测最高{max_speed}km/h"
+            else:
+                vehicle_type = "电动摩托车"
+                vehicle_desc = f"符合电动摩托车国标（最大车速>{LIGHT_MOTO_MAX_SPEED}km/h），实测最高{max_speed}km/h"
+
+            # Step 2: 改装/超速检测
+            peak_power_w = res['峰值功率_W']
+            avg_power_w = res['骑行平均功率_W']
+            is_modified = False
+            modify_reason = ""
+            if has_real_ride and max_speed >= MODIFY_SPEED_THRESHOLD and riding_avg_current >= MODIFY_CURRENT_THRESHOLD:
+                is_modified = True
+                modify_reason = f"高速高电流（{max_speed}km/h + {riding_avg_current}A），峰值功率{peak_power_w:.0f}W"
+            elif has_real_ride and riding_avg_current >= MODIFY_CURRENT_HIGH:
+                is_modified = True
+                modify_reason = f"持续大电流放电（平均{riding_avg_current}A），峰值功率{peak_power_w:.0f}W"
+            elif has_real_ride and peak_power_w >= MODIFY_PEAK_POWER_W:
+                is_modified = True
+                modify_reason = f"峰值功率异常（{peak_power_w:.0f}W），远超正常电动车功率范围"
+
+            if is_modified:
+                vehicle_type = "改装/超速车"
+                vehicle_desc = f"行驶特征异常——{modify_reason}，存在改装或超速嫌疑"
+            elif not has_real_ride:
+                vehicle_type = "数据不足"
+                vehicle_desc = "无有效骑行数据，无法判定车辆形态"
+            res['车辆形态'] = vehicle_type
+            res['车辆形态说明'] = vehicle_desc
+
+            # -------------------------- 14.5. 客户形态判定 --------------------------
             very_short_distance = (total_distance < STORAGE_MAX_DISTANCE_KM)
             very_low_speed = (avg_speed < STORAGE_MAX_AVG_SPEED_KMH)
 
@@ -825,9 +932,7 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
 
             is_storage_scene = no_real_ride and valid_gps_enough and very_short_distance and very_low_speed and discharge_much_longer and ride_ratio_low
 
-            if max_speed >= MODIFY_SPEED_THRESHOLD and riding_avg_current >= MODIFY_CURRENT_THRESHOLD and has_real_ride:
-                customer_type = "改装/超速车"
-            elif is_storage_scene:
+            if is_storage_scene:
                 customer_type = "地摊/储能"
             elif has_real_ride and total_riding_hours >= 4.0 and peak_riding_ratio >= 0.3:
                 customer_type = "专送骑手"
@@ -866,7 +971,7 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             )
             if customer_type == "地摊/储能":
                 score = min(100, score + 20)
-            elif customer_type == "改装/超速车":
+            elif vehicle_type == "改装/超速车":
                 score -= 30
             score = max(0, min(100, round(score)))
             res['包月友好评分'] = score
@@ -931,14 +1036,13 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             # 2. 客户形态说明
             type_desc = ""
             current_type = res['客户形态']
-            if current_type == "改装/超速车":
-                type_desc = f"行驶特征异常（最高速度{max_speed}km/h，平均骑行电流{riding_avg_current}A），远超普通两轮车水平，存在改装或超速嫌疑"
-            elif current_type == "地摊/储能":
+            if current_type == "地摊/储能":
                 type_desc = f"非移动用电特征明显（当日骑行{total_riding_hours}小时，怠速放电{idle_discharge_hours}小时），放电以静止状态为主，疑似地摊供电或储能场景"
             elif current_type == "专送骑手":
-                type_desc = f"工作特征显著（当日骑行{total_riding_hours:.1f}小时，高峰骑行占比{peak_riding_ratio*100:.0f}%），工作时长稳定且午晚高峰高度活跃，符合专送骑手画像"
+                hull_area = res.get('凸包覆盖面积', 0)
+                type_desc = f"工作特征显著（当日骑行{total_riding_hours:.1f}小时，高峰骑行占比{peak_riding_ratio*100:.0f}%），工作时长稳定且午晚高峰高度活跃，活动范围{res.get('R90日常活动半径', 0):.1f}km，符合专送骑手画像"
             elif current_type == "众包骑手":
-                type_desc = f"具有兼职骑手特征（当日骑行{total_riding_hours:.1f}小时，高峰骑行占比{peak_riding_ratio*100:.0f}%），高峰时段有一定活跃度"
+                type_desc = f"具有兼职骑手特征（当日骑行{total_riding_hours:.1f}小时，高峰骑行占比{peak_riding_ratio*100:.0f}%），高峰时段有一定活跃度，符合众包骑手画像"
             elif current_type == "标准骑手":
                 type_desc = f"骑行行为规律（当日行驶里程{total_distance}km，骑行时长{total_riding_hours:.1f}小时），属于标准日常使用场景"
             elif current_type == "普通骑手":
@@ -1057,6 +1161,11 @@ def process_fact_layer(target_date: Optional[str] = None, skip_incomplete: bool 
             continue
 
         print(f"   ✅ 加载完成：{len(df_raw):,} 行数据")
+
+        # 2026-05-22 ~ 2026-05-26 温度数据异常，统一设为25°C
+        if date_str >= '2026-05-22' and date_str <= '2026-05-26' and '温度' in df_raw.columns:
+            df_raw['温度'] = 25.0
+            print(f"   🌡️  温度数据已替换为 25°C（{date_str} 原始数据异常）")
 
         is_complete, reason = _check_data_completeness(df_raw, date_str)
         if not is_complete:

@@ -31,63 +31,13 @@ from src.pipeline.score_common import (
     VIOLENT_CURRENT_TIMES, HIGH_LOSS_CURRENT_TIMES, OVER_CURRENT_MIN_HOUR,
 )
 
-VALID_RIDE_MIN_HOUR = 0.1
-STORAGE_MIN_VALID_GPS_POINTS = 10
-STORAGE_MAX_DISTANCE_KM = 1.0
-STORAGE_MAX_AVG_SPEED_KMH = 3.0
-STORAGE_DISCHARGE_RATIO_THRESHOLD = 3.0
-STORAGE_MIN_DISCHARGE_HOUR = 2.0
-STORAGE_RIDE_DURATION_RATIO = 0.1
-MODIFY_SPEED_THRESHOLD = 50
-MODIFY_CURRENT_THRESHOLD = 24
-PATTERN_DOMINANT_RATIO = 0.5
-
-SOC_LOW_WARNING = 20
-SOC_CRITICAL = 10
-
 NOON_PEAK_HOURS = set(range(11, 14))
 EVENING_PEAK_HOURS = set(range(17, 20))
 
 
-def determine_customer_type(total_riding_hours, total_distance, idle_discharge_hours, total_discharge_hours, 
-                           max_speed, riding_avg_current, peak_riding_ratio, n):
-    """客户形态判定（严格按照旧脚本逻辑）"""
-    has_real_ride = (total_riding_hours >= VALID_RIDE_MIN_HOUR) and (total_distance > 0)
-    no_real_ride = not has_real_ride
-    valid_gps_enough = (n >= STORAGE_MIN_VALID_GPS_POINTS)
-    avg_speed = total_distance / total_riding_hours if total_riding_hours > 0.01 else 0
-
-    very_short_distance = (total_distance < STORAGE_MAX_DISTANCE_KM)
-    very_low_speed = (avg_speed < STORAGE_MAX_AVG_SPEED_KMH)
-
-    discharge_much_longer = (
-        (idle_discharge_hours > total_riding_hours * STORAGE_DISCHARGE_RATIO_THRESHOLD) & 
-        (idle_discharge_hours >= STORAGE_MIN_DISCHARGE_HOUR) &
-        (total_riding_hours < 0.5)
-    )
-    ride_ratio_low = (total_riding_hours / total_discharge_hours < STORAGE_RIDE_DURATION_RATIO) if total_discharge_hours > 0 else True
-
-    is_storage_scene = no_real_ride and valid_gps_enough and very_short_distance and very_low_speed and discharge_much_longer and ride_ratio_low
-
-    if max_speed >= MODIFY_SPEED_THRESHOLD and riding_avg_current >= MODIFY_CURRENT_THRESHOLD and has_real_ride:
-        return "改装/超速车"
-    elif is_storage_scene:
-        return "地摊/储能"
-    elif has_real_ride and total_riding_hours >= 4.0 and peak_riding_ratio >= 0.3:
-        return "专送骑手"
-    elif has_real_ride and total_riding_hours >= 2.0 and peak_riding_ratio >= 0.15:
-        return "众包骑手"
-    elif has_real_ride and total_distance <= 30 and total_riding_hours <= 2.0:
-        return "标准骑手"
-    elif has_real_ride:
-        return "普通骑手"
-    else:
-        return "数据不足"
-
-
 def _get_user_type(group):
     """获取用户客户形态（按优先级）"""
-    priority = ["改装/超速车", "地摊/储能"]
+    priority = ["地摊/储能"]
     for t in priority:
         if t in list(group['客户形态']):
             return t
@@ -96,6 +46,28 @@ def _get_user_type(group):
     total_duration = contract_type_duration.sum()
     if total_duration > 0 and len(contract_type_duration) > 0:
         return contract_type_duration.idxmax()
+    return "数据不足"
+
+
+def _get_vehicle_type(group):
+    priority = ["改装/超速车"]
+    for t in priority:
+        if t in list(group['车辆形态']):
+            return t
+
+    type_values = group['车辆形态'].dropna()
+    type_values = type_values[type_values != '数据不足']
+    if len(type_values) > 0:
+        return type_values.value_counts().index[0]
+    return '数据不足'
+
+
+def _get_vehicle_desc(types, descs):
+    priority = ["改装/超速车", "电动摩托车", "电动轻便摩托车", "电动自行车", "数据不足"]
+    temp_df = pd.DataFrame({'type': types, 'desc': descs})
+    for t in priority:
+        if t in temp_df['type'].values:
+            return temp_df[temp_df['type'] == t]['desc'].iloc[0]
     return "数据不足"
 
 
@@ -119,7 +91,7 @@ def _get_level_desc(levels, descs):
 
 def _get_type_desc(types, descs):
     """获取客户形态说明"""
-    priority = ["改装/超速车", "地摊/储能", "专送骑手", "众包骑手", "标准骑手", "普通骑手", "数据不足"]
+    priority = ["地摊/储能", "专送骑手", "众包骑手", "标准骑手", "普通骑手", "数据不足"]
     temp_df = pd.DataFrame({'type': types, 'desc': descs})
     for t in priority:
         if t in temp_df['type'].values:
@@ -167,14 +139,13 @@ def _generate_level_desc(row):
 def _generate_type_desc(row):
     """生成客户形态说明"""
     current_type = row['客户形态']
-    if current_type == "改装/超速车":
-        return f"行驶特征异常（最高速度{row['最大速度']}km/h，平均骑行电流{row['骑行放电平均电流']}A），远超普通两轮车水平，存在改装或超速嫌疑"
-    elif current_type == "地摊/储能":
+    if current_type == "地摊/储能":
         return f"非移动用电特征明显（当日骑行{row['骑行总耗时(小时)']}小时，怠速放电{row['怠速放电时长(小时)']}小时），放电以静止状态为主，疑似地摊供电或储能场景"
     elif current_type == "专送骑手":
-        return f"工作特征显著（当日骑行{row['骑行总耗时(小时)']:.1f}小时，高峰骑行占比{row['高峰骑行占比']*100:.0f}%），工作时长稳定且午晚高峰高度活跃，符合专送骑手画像"
+        r90 = row.get('R90活动半径_km', 0)
+        return f"工作特征显著（当日骑行{row['骑行总耗时(小时)']:.1f}小时，高峰骑行占比{row['高峰骑行占比']*100:.0f}%），工作时长稳定且午晚高峰高度活跃，活动半径{r90:.1f}km，符合专送骑手画像"
     elif current_type == "众包骑手":
-        return f"具有兼职骑手特征（当日骑行{row['骑行总耗时(小时)']:.1f}小时，高峰骑行占比{row['高峰骑行占比']*100:.0f}%），高峰时段有一定活跃度"
+        return f"具有兼职骑手特征（当日骑行{row['骑行总耗时(小时)']:.1f}小时，高峰骑行占比{row['高峰骑行占比']*100:.0f}%），高峰时段有一定活跃度，符合众包骑手画像"
     elif current_type == "标准骑手":
         return f"骑行行为规律（当日行驶里程{row['行驶距离']}km，骑行时长{row['骑行总耗时(小时)']:.1f}小时），属于标准日常使用场景"
     elif current_type == "普通骑手":
@@ -403,9 +374,29 @@ def process_snapshot_layer(target_date: Optional[str] = None, target_dates: Opti
         df_agg['当日夜间骑行均速_kmh'] = g['夜间骑行均速_kmh'].max().round(2)
         df_agg['当日高速骑行点数'] = g['高速骑行点数(>40kmh)'].sum()
 
+        # 功率聚合（兼容旧版 fact 数据中无此字段）
+        if '峰值功率_W' in df_fact.columns:
+            df_agg['当日峰值功率_W'] = g['峰值功率_W'].max()
+        if '骑行平均功率_W' in df_fact.columns:
+            df_agg['当日平均骑行功率_W'] = g['骑行平均功率_W'].mean().round(1)
+
         # 骑行时刻聚合
         df_agg['最早骑行时刻_h'] = g['最早骑行时刻_h'].min()
         df_agg['最晚骑行时刻_h'] = g['最晚骑行时刻_h'].max()
+
+        # 新增特征聚合（文档标准：众包/专送判定增强）
+        if '上线时间熵值' in df_fact.columns:
+            df_agg['当日上线时间熵值'] = g['上线时间熵值'].max()
+        if '骑行时段集中度' in df_fact.columns:
+            df_agg['当日骑行时段集中度'] = g['骑行时段集中度'].mean()
+        if '路线曲折系数' in df_fact.columns:
+            df_agg['当日路线曲折系数'] = g['路线曲折系数'].mean()
+        if '速度变异系数' in df_fact.columns:
+            df_agg['当日速度变异系数'] = g['速度变异系数'].mean()
+        if '跨区域转移次数' in df_fact.columns:
+            df_agg['当日跨区域转移次数'] = g['跨区域转移次数'].max()
+        if '静止时长占比' in df_fact.columns:
+            df_agg['当日静止时长占比'] = g['静止时长占比'].mean()
 
         df_custom = pd.DataFrame()
         df_custom['核心活动省份'] = g['核心活动省份'].apply(lambda x: x.value_counts().index[0] if len(x.dropna())>0 else "")
@@ -413,6 +404,8 @@ def process_snapshot_layer(target_date: Optional[str] = None, target_dates: Opti
         df_custom['核心活动区县'] = g['核心活动区县'].apply(lambda x: x.value_counts().index[0] if len(x.dropna())>0 else "")
         df_custom['风险标签_电流异常'] = g['电流异常用户'].apply(lambda x: '是' if '是' in list(x) else '否')
         df_custom['客户形态_综合'] = g.apply(_get_user_type)
+        if '车辆形态' in df_fact.columns:
+            df_custom['车辆形态_综合'] = g.apply(_get_vehicle_type)
         df_custom['用户等级_综合'] = g.apply(_get_user_level)
 
         def _dominant_swap_period(series):
@@ -434,6 +427,8 @@ def process_snapshot_layer(target_date: Optional[str] = None, target_dates: Opti
             df_custom['用户等级_综合说明'] = g.apply(lambda x: _get_level_desc(x['用户等级'], x['用户等级说明']))
         if '客户形态说明' in df_fact.columns:
             df_custom['客户形态_综合说明'] = g.apply(lambda x: _get_type_desc(x['客户形态'], x['客户形态说明']))
+        if '车辆形态说明' in df_fact.columns:
+            df_custom['车辆形态_综合说明'] = g.apply(lambda x: _get_vehicle_desc(x['车辆形态'], x['车辆形态说明']))
 
         df_user = pd.concat([df_agg, df_custom], axis=1).reset_index()
         df_user = df_user.drop(columns=['_weighted_peak_ratio', '_total_riding_hour', '_weighted_soc20_ratio', '_weighted_soc10_ratio', '_weighted_current_sum'], errors='ignore')
