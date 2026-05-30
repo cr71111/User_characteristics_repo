@@ -77,7 +77,7 @@ def create_mock_raw_data(n_days=7):
             'pattern': 'commute',
             'base_lat': 31.25, 'base_lon': 121.48,
             'speed_kmh': 65, 'avg_current': 30, 'max_current': 65,
-            'label': '改装/超速车（高速高电流，车辆形态=改装/超速车，客户形态=专送骑手）',
+            'label': '改装/超速车（高速高电流，车辆形态=改装/超速车，用户形态=专送骑手）',
         },
         {
             'user_id': 'USER_EBIKE_02',
@@ -254,6 +254,7 @@ def run_snapshot_layer(df_fact):
 
         df_agg['单合约日均行驶里程_km'] = (df_agg['当日总行驶距离_km'] / df_agg['关联合约数'].clip(lower=1)).round(2)
         df_agg['单合约日均骑行时长_h'] = (df_agg['当日总骑行时长_h'] / df_agg['关联合约数'].clip(lower=1)).round(2)
+        df_agg['单合约日均放电时长_h'] = (df_agg['当日总放电时长_h'] / df_agg['关联合约数'].clip(lower=1)).round(2)
         df_agg['单合约日均怠速放电_h'] = (df_agg['当日总怠速放电时长_h'] / df_agg['关联合约数'].clip(lower=1)).round(2)
 
         df_agg['当日总骑行次数'] = g['骑行次数'].sum()
@@ -273,7 +274,7 @@ def run_snapshot_layer(df_fact):
         df_agg['平峰总里程_km'] = g['平峰骑行里程'].sum()
         df_agg['夜间总里程_km'] = g['夜间骑行里程'].sum()
 
-        df_agg['当日高峰骑行占比'] = (
+        df_agg['高峰骑行占比'] = (
             (df_agg['午间高峰总里程_km'] + df_agg['晚间高峰总里程_km'])
             / df_agg['当日总行驶距离_km'].clip(lower=0.01)
         )
@@ -283,13 +284,20 @@ def run_snapshot_layer(df_fact):
         df_agg['当日高峰换电次数'] = g['高峰换电次数'].sum()
         df_agg['当日高速骑行点数'] = g['高速骑行点数(>40kmh)'].sum()
 
+        df_agg['当日平均骑行速度_kmh'] = g['平均骑行速度'].mean()
         df_agg['当日平均骑行电流_A'] = g['骑行放电平均电流'].mean()
         df_agg['当日百公里电耗_kWh'] = (
             (df_agg['当日总用电量_kWh'] / df_agg['当日总行驶距离_km'].clip(lower=0.01)) * 100
         )
 
-        df_agg['当日_R90活动半径_km'] = g['R90日常活动半径'].max()
-        df_agg['当日凸包覆盖面积_km2'] = g['凸包覆盖面积'].max()
+        df_agg['当日最高速度_kmh'] = g['最大速度'].max()
+        df_agg['当日最大电流_A'] = g['最大电流'].max()
+        df_agg['当日最高温度_℃'] = g['最大温度'].max()
+        df_agg['当日峰值功率_W'] = g['峰值功率_W'].max()
+        df_agg['最大单合约活动半径_km'] = g['R95核心活动半径'].max()
+        df_agg['R90活动半径_km'] = g['R90日常活动半径'].max()
+        df_agg['最大凸包覆盖面积_km2'] = g['凸包覆盖面积'].max()
+        df_agg['最大单次出行距离_km'] = g['最大出行距离'].max()
 
         if '上线时间熵值' in df_fact.columns:
             df_agg['当日上线时间熵值'] = g['上线时间熵值'].max()
@@ -306,7 +314,7 @@ def run_snapshot_layer(df_fact):
 
         df_custom = g.apply(lambda x: pd.Series({
             '车辆形态_综合': _get_vehicle_type(x),
-            '客户形态_综合': _get_user_type(x),
+            '用户形态_综合': _get_user_type(x),
         }), include_groups=False).reset_index(drop=True)
 
         df_agg = df_agg.reset_index(drop=True)
@@ -379,7 +387,7 @@ def main():
         if not uid.startswith('USER_'):
             continue
         vt = row.get('车辆形态', 'N/A')
-        ct = row.get('客户形态', 'N/A')
+        ct = row.get('用户形态', 'N/A')
         ms = row.get('最大速度', 0)
         ac = row.get('骑行放电平均电流', 0)
         pp = row.get('峰值功率_W', 0)
@@ -395,7 +403,7 @@ def main():
         ir = row.get('静止时长占比', 'N/A')
 
         print(f"\n  {uid}:")
-        print(f"    车辆形态={vt}, 客户形态={ct}")
+        print(f"    车辆形态={vt}, 用户形态={ct}")
         print(f"    最高速度={ms:.0f}km/h, 平均骑行电流={ac:.1f}A, 峰值功率={pp:.0f}W")
         print(f"    行驶距离={td:.1f}km, 骑行时长={rh:.1f}h, 高峰占比={pr:.1%}")
         print(f"    怠速放电={dh:.1f}h")
@@ -406,7 +414,7 @@ def main():
         for _, row in df_lifecycle.iterrows():
             uid = row.get('用户id', 'N/A')
             vt7 = row.get('车辆形态_7d', 'N/A')
-            ct7 = row.get('客户形态_综合_7d', 'N/A')
+            ct7 = row.get('用户形态_综合_7d', 'N/A')
             ms7 = row.get('近7d最高速度_kmh', 0)
             ent7 = row.get('近7d平均上线时间熵值', 'N/A')
             print(f"  {uid}: 车辆={vt7}, 客户={ct7}, 最高速度={ms7:.0f}km/h, 熵={ent7}")
@@ -445,26 +453,26 @@ def main():
 
     storage_rows = df_fact[df_fact['用户id'].str.contains('STORAGE')]
     if len(storage_rows) > 0:
-        ct = storage_rows.iloc[0]['客户形态']
+        ct = storage_rows.iloc[0]['用户形态']
         exp = '地摊/储能'
         ok = ct == exp
-        checks.append((f'地摊储能客户形态={ct}', ok, exp))
+        checks.append((f'地摊储能用户形态={ct}', ok, exp))
 
     delivery_rows = df_fact[df_fact['用户id'].str.contains('DELIVERY')]
     if len(delivery_rows) > 0:
-        ct = delivery_rows.iloc[0]['客户形态']
+        ct = delivery_rows.iloc[0]['用户形态']
         ok = ct in ('专送骑手', '众包骑手')
-        checks.append((f'骑手客户形态={ct}', ok, '专送骑手或众包骑手'))
+        checks.append((f'骑手用户形态={ct}', ok, '专送骑手或众包骑手'))
 
     for check, ok, expected in checks:
-        status = '✅' if ok else '❌'
+        status = '[PASS]' if ok else '[FAIL]'
         print(f"  {status} {check} (期望: {expected})")
 
     all_ok = all(ok for _, ok, _ in checks)
     if all_ok:
-        print("\n  🎉 全部验证通过！")
+        print("\n  *** 全部验证通过! ***")
     else:
-        print("\n  ⚠️ 部分验证未通过，请检查日志")
+        print("\n  *** 部分验证未通过，请检查日志 ***")
 
     print(f"\n  测试数据保留在: {TEST_DATA_DIR}")
     return all_ok

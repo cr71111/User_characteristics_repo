@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 L2 Snapshot Layer - 用户日级快照层
-职责：将合约日级事实聚合为用户日级快照，并做日级评分和客户形态判定。
+职责：将合约日级事实聚合为用户日级快照，并做日级评分和用户形态判定。
 
 输入：fact/daily/{date}.parquet
 输出：snapshot/user_daily.parquet（追加写入，保留历史）
@@ -36,13 +36,13 @@ EVENING_PEAK_HOURS = set(range(17, 20))
 
 
 def _get_user_type(group):
-    """获取用户客户形态（按优先级）"""
+    """获取用户用户形态（按优先级）"""
     priority = ["地摊/储能"]
     for t in priority:
-        if t in list(group['客户形态']):
+        if t in list(group['用户形态']):
             return t
     
-    contract_type_duration = group.groupby('客户形态')['骑行总耗时(小时)'].sum()
+    contract_type_duration = group.groupby('用户形态')['骑行总耗时(小时)'].sum()
     total_duration = contract_type_duration.sum()
     if total_duration > 0 and len(contract_type_duration) > 0:
         return contract_type_duration.idxmax()
@@ -90,7 +90,7 @@ def _get_level_desc(levels, descs):
 
 
 def _get_type_desc(types, descs):
-    """获取客户形态说明"""
+    """获取用户形态说明"""
     priority = ["地摊/储能", "专送骑手", "众包骑手", "标准骑手", "普通骑手", "数据不足"]
     temp_df = pd.DataFrame({'type': types, 'desc': descs})
     for t in priority:
@@ -137,8 +137,8 @@ def _generate_level_desc(row):
 
 
 def _generate_type_desc(row):
-    """生成客户形态说明"""
-    current_type = row['客户形态']
+    """生成用户形态说明"""
+    current_type = row['用户形态']
     if current_type == "地摊/储能":
         return f"非移动用电特征明显（当日骑行{row['骑行总耗时(小时)']}小时，怠速放电{row['怠速放电时长(小时)']}小时），放电以静止状态为主，疑似地摊供电或储能场景"
     elif current_type == "专送骑手":
@@ -403,7 +403,7 @@ def process_snapshot_layer(target_date: Optional[str] = None, target_dates: Opti
         df_custom['核心活动城市'] = g['核心活动城市'].apply(lambda x: x.value_counts().index[0] if len(x.dropna())>0 else "")
         df_custom['核心活动区县'] = g['核心活动区县'].apply(lambda x: x.value_counts().index[0] if len(x.dropna())>0 else "")
         df_custom['风险标签_电流异常'] = g['电流异常用户'].apply(lambda x: '是' if '是' in list(x) else '否')
-        df_custom['客户形态_综合'] = g.apply(_get_user_type)
+        df_custom['用户形态_综合'] = g.apply(_get_user_type)
         if '车辆形态' in df_fact.columns:
             df_custom['车辆形态_综合'] = g.apply(_get_vehicle_type)
         df_custom['用户等级_综合'] = g.apply(_get_user_level)
@@ -425,8 +425,8 @@ def process_snapshot_layer(target_date: Optional[str] = None, target_dates: Opti
 
         if '用户等级说明' in df_fact.columns:
             df_custom['用户等级_综合说明'] = g.apply(lambda x: _get_level_desc(x['用户等级'], x['用户等级说明']))
-        if '客户形态说明' in df_fact.columns:
-            df_custom['客户形态_综合说明'] = g.apply(lambda x: _get_type_desc(x['客户形态'], x['客户形态说明']))
+        if '用户形态说明' in df_fact.columns:
+            df_custom['用户形态_综合说明'] = g.apply(lambda x: _get_type_desc(x['用户形态'], x['用户形态说明']))
         if '车辆形态说明' in df_fact.columns:
             df_custom['车辆形态_综合说明'] = g.apply(lambda x: _get_vehicle_desc(x['车辆形态'], x['车辆形态说明']))
 

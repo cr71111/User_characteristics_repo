@@ -199,7 +199,7 @@ class AnomalyDetector:
         result = self.result_df_.copy()
 
         rule_anomaly_cols = []
-        for col in ['风险标签', '用户等级_动态', '用户形态']:
+        for col in ['风险标签', '用户等级_动态', '用户形态_综合_7d', '车辆形态_7d']:
             if col in result.columns:
                 rule_anomaly_cols.append(col)
 
@@ -209,8 +209,10 @@ class AnomalyDetector:
                 is_rule_normal &= (result['风险标签'] == '正常')
             if '用户等级_动态' in result.columns:
                 is_rule_normal &= ~result['用户等级_动态'].isin(['高损耗用户', '暴力'])
-            if '用户形态' in result.columns:
-                is_rule_normal &= ~result['用户形态'].isin(['改装/超速车', '地摊/储能'])
+            if '用户形态_综合_7d' in result.columns:
+                is_rule_normal &= ~result['用户形态_综合_7d'].isin(['地摊/储能'])
+            if '车辆形态_7d' in result.columns:
+                is_rule_normal &= ~result['车辆形态_7d'].isin(['改装/超速车'])
 
             new_findings = result[
                 (result['ml_异常标签_iforest'] == -1) & is_rule_normal
@@ -316,7 +318,7 @@ class AnomalyDetector:
                        'ml_双模型异常']
 
         extra_cols = []
-        for col in ['风险标签', '用户等级_动态', '用户形态', '重评分数',
+        for col in ['风险标签', '用户等级_动态', '用户形态_综合_7d', '车辆形态_7d', '重评分数',
                      '用户生命周期状态_7d', '近7d出勤天数', '近7d出勤率']:
             if col in self.result_df_.columns:
                 extra_cols.append(col)

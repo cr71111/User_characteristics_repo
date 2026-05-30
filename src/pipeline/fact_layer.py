@@ -276,7 +276,7 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             '骑行-放电时长比': 0.0,
             '电流异常用户': '否',
             '最大温度': 0.0, '最大温度时间': pd.NA, '平均温度': 0.0,
-            '客户形态': '数据不足', '包月友好评分': 0, '用户等级': '无效',
+            '用户形态': '数据不足', '包月友好评分': 0, '用户等级': '无效',
             '高峰骑行占比': 0.0, '单日骑行次数': 0, '当日是否出勤': 0,
             '电流>60A次数': 0, '电流>80A次数': 0,
             '超100A连续次数': 0, '超100A累计时长_h': 0.0,
@@ -294,7 +294,7 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             'P50骑行速度_kmh': 0.0, 'P90骑行速度_kmh': 0.0,
             '夜间骑行均速_kmh': 0.0, '高速骑行点数(>40kmh)': 0,
             # 功率与车辆形态
-            '骑行平均功率_W': 0.0, '峰值功率_W': 0.0,
+            '骑行平均功率_W': 0.0, '峰值功率_W': 0.0, '估算车辆功率_W': 0.0,
             '车辆形态': '数据不足', '车辆形态说明': '',
             # 骑行时刻
             '最早骑行时刻_h': -1, '最晚骑行时刻_h': -1, '主要骑行时段': '无数据',
@@ -686,6 +686,7 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
                 std_voltage = battery_voltage_map.get(int(battery_id_str), DEFAULT_VOLTAGE)
             res['骑行平均功率_W'] = round(std_voltage * riding_avg_current, 1)
             res['峰值功率_W'] = round(std_voltage * max_current, 1)
+            res['估算车辆功率_W'] = res['峰值功率_W']
 
             if not riding_current_data.empty:
                 res['电流>60A次数'] = (riding_current_data['电流'] > NORMAL_CURRENT_THRESHOLD).sum()
@@ -919,7 +920,7 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             res['车辆形态'] = vehicle_type
             res['车辆形态说明'] = vehicle_desc
 
-            # -------------------------- 14.5. 客户形态判定 --------------------------
+            # -------------------------- 14.5. 用户形态判定 --------------------------
             very_short_distance = (total_distance < STORAGE_MAX_DISTANCE_KM)
             very_low_speed = (avg_speed < STORAGE_MAX_AVG_SPEED_KMH)
 
@@ -944,7 +945,7 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
                 customer_type = "普通骑手"
             else:
                 customer_type = "数据不足"
-            res['客户形态'] = customer_type
+            res['用户形态'] = customer_type
 
             # -------------------------- 15. 包月友好评分体系计算 --------------------------
             score = calc_monthly_score_v2(
@@ -1033,9 +1034,9 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
                 level_desc = "数据不足或无有效骑行数据，无法判定"
             res['用户等级说明'] = level_desc
 
-            # 2. 客户形态说明
+            # 2. 用户形态说明
             type_desc = ""
-            current_type = res['客户形态']
+            current_type = res['用户形态']
             if current_type == "地摊/储能":
                 type_desc = f"非移动用电特征明显（当日骑行{total_riding_hours}小时，怠速放电{idle_discharge_hours}小时），放电以静止状态为主，疑似地摊供电或储能场景"
             elif current_type == "专送骑手":
@@ -1049,7 +1050,7 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
                 type_desc = f"有常规骑行行为（当日行驶里程{total_distance}km，骑行时长{total_riding_hours:.1f}小时），不符合特定骑手标签特征"
             else:
                 type_desc = "无有效骑行数据或数据量不足，无法判定具体使用场景"
-            res['客户形态说明'] = type_desc
+            res['用户形态说明'] = type_desc
             # ==================================================================================
 
         results.append(res)

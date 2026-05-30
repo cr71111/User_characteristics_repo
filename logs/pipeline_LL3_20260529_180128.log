@@ -1,0 +1,75 @@
+📋 日志文件: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_LL3_20260529_180128.log
+🕐 开始时间: 2026-05-29 18:01:28
+
+
+================================================================================
+🚀 执行模式: FROM_L3 (从 L3 层开始重建)
+================================================================================
+   🗑️  已清除 lifecycle/ 目录 (0 个文件)
+   ⚠️ reports/ 目录: 已删 2 个文件, 1 个被 OneDrive 锁定（将覆盖写入）
+
+
+================================================================================
+L3 Lifecycle Layer - 用户生命周期层
+================================================================================
+
+[1/6] 加载快照数据...
+   加载完成：540,414 条记录
+
+[2/6] 计算7天滚动指标...
+计算7天滚动指标...
+   完成：25,470 个用户
+
+[3/6] 计算月度用电预估...
+   ✅ 月度出勤预估明细已保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\lifecycle\user_monthly_attendance_detail.csv (25,470 用户)
+
+[3.5/6] 加载合约信息...
+📂 正在加载用户合约信息表...
+✅ 用户合约信息表加载完成：共 179485 个用户
+   ✅ 合约信息注入完成
+
+[4/6] 动态阈值计算与用户评分...
+[DynamicThresholds] [CHANGED] Data fingerprint changed or baseline expired, recomputing thresholds
+   Data source changed, rebuilding baseline
+   Baseline expired (39d > 30d)
+[DynamicThresholds] [CALC] Computing quantiles from data...
+
+[Distribution Shift Detection Report]
+  [OK] No significant shift detected
+[DynamicThresholds] [DEBUG] EMA配置状态 - use_ema: True
+[DynamicThresholds] [DEBUG] 分布漂移检测结果 - has_shift: False
+[DynamicThresholds] [EMA] ℹ️ 未检测到分布漂移，保持当前基准线不变
+   评分分类完成
+
+[4.5/6] 计算完全体画像衍生指标...
+
+[5/6] 生命周期状态判定...
+
+[5.5/6] 生成完全体画像文本...
+
+[6/6] 保存结果...
+   L3 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\lifecycle/user_7d.parquet (25,470 用户)
+
+================================================================================
+L4 Report Layer - 报告输出层
+================================================================================
+
+[1/1] 加载生命周期数据...
+   ✅ 加载完成：25,470 个用户
+
+生成报告文件...
+   ✅ 用户明细: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\user_detail.csv
+   ✅ 用户7天滚动全量数据: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\user_7d_full.csv (25,470 用户, 109 字段)
+   ✅ 等级分布: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\level_distribution.csv
+   ✅ 风险告警: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\risk_alerts.csv (8681 用户)
+   ✅ 月度出勤预估明细: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\user_monthly_attendance_detail.csv (25,470 用户)
+   ✅ 漂移报告: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\shift_report.json
+   ✅ 文本摘要: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\summary.txt
+
+✅ L4 Report Layer 完成，报告目录: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports
+
+⏱️  从 L3 层重建完成，总耗时: 1410.86 秒
+
+✅ 流水线执行成功
+🕐 结束时间: 2026-05-29 18:24:59
+📋 日志已保存: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_LL3_20260529_180128.log

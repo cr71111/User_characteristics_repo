@@ -293,7 +293,7 @@ class SupervisedClassifier:
         prob_cols = [c for c in df_predicted.columns if c.startswith('ml_xgb_概率_')]
         cols += prob_cols
 
-        extra_cols = ['风险标签', '用户等级_动态', '用户形态']
+        extra_cols = ['风险标签', '用户等级_动态', '用户形态_综合_7d', '车辆形态_7d']
         for c in extra_cols:
             if c in low_conf.columns:
                 cols.append(c)

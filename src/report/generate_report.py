@@ -26,6 +26,11 @@ from typing import Dict, List, Tuple
 import pandas as pd
 import numpy as np
 
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 # PDF 生成依赖
 try:
     from fpdf import FPDF
@@ -427,20 +432,20 @@ def generate_report(data: dict) -> str:
         w(f'平均重评分数 {safe_mean(risk_sub.get("重评分数", pd.Series())):.1f}。')
         w()
 
-    # ═══════════════ 第五章：客户形态 ═══════════════
+    # ═══════════════ 第五章：用户形态 ═══════════════
     w('---')
     w()
-    w('## 五、客户形态分析')
+    w('## 五、用户形态分析')
     w()
 
-    if '客户形态_综合_7d' in df.columns:
+    if '用户形态_综合_7d' in df.columns:
         ctype_order_7d = ['专送骑手', '众包骑手', '标准骑手', '普通骑手', '地摊/储能', '数据不足']
-        w('### 5.1 客户形态分布')
+        w('### 5.1 用户形态分布')
         w()
-        w('| 客户形态 | 人数 | 占比 | 平均电流(A) | 百公里电耗(kWh) | 日均里程(km) | 平均评分 |')
+        w('| 用户形态 | 人数 | 占比 | 平均电流(A) | 百公里电耗(kWh) | 日均里程(km) | 平均评分 |')
         w('|----------|------|------|------------|----------------|------------|----------|')
         for ct in ctype_order_7d:
-            sub = df[df['客户形态_综合_7d'] == ct]
+            sub = df[df['用户形态_综合_7d'] == ct]
             cnt = len(sub)
             if cnt > 0:
                 w(f'| {ct} | {cnt:,} | {fmt_pct(cnt, total_users):.1f}% | {safe_mean(sub.get("近7d平均骑行电流_A", pd.Series())):.2f} | {safe_mean(sub.get("近7d百公里电耗_kWh", pd.Series())):.2f} | {safe_mean(sub.get("近7d日均行驶距离_km", pd.Series())):.2f} | {safe_mean(sub.get("重评分数", pd.Series())):.1f} |')
@@ -462,7 +467,7 @@ def generate_report(data: dict) -> str:
 
     # ═══════════════ 5.3 众包/专送判定特征 ═══════════════
     has_new_features = any(col in df.columns for col in ['近7d平均上线时间熵值', '近7d平均路线曲折系数', '近7d平均速度变异系数'])
-    if has_new_features and '客户形态_综合_7d' in df.columns:
+    if has_new_features and '用户形态_综合_7d' in df.columns:
         w('### 5.3 众包/专送判定特征对比')
         w()
         w('| 特征指标 | 专送骑手 | 众包骑手 | 全体平均 | 文档标准参考 |')
@@ -470,8 +475,8 @@ def generate_report(data: dict) -> str:
         
         # 上线时间熵值
         if '近7d平均上线时间熵值' in df.columns:
-            zhuan = df[df['客户形态_综合_7d'] == '专送骑手']
-            zhong = df[df['客户形态_综合_7d'] == '众包骑手']
+            zhuan = df[df['用户形态_综合_7d'] == '专送骑手']
+            zhong = df[df['用户形态_综合_7d'] == '众包骑手']
             w(f'| 上线时间熵值 | {safe_mean(zhuan.get("近7d平均上线时间熵值", pd.Series())):.2f} | {safe_mean(zhong.get("近7d平均上线时间熵值", pd.Series())):.2f} | {safe_mean(df.get("近7d平均上线时间熵值", pd.Series())):.2f} | 专送<3.5，众包>3.5 |')
         
         # 路线曲折系数
@@ -541,8 +546,8 @@ def generate_report(data: dict) -> str:
         w()
         w('| 用户群体 | 骑行占比 | 平均日均里程 |')
         w('|----------|---------|------------|')
-        w(f'| TOP 10% 用户 | {fmt_pct(top10_km, total_km):.1f}% | {safe_mean(df_km.head(int(len(df_km)*0.1))["近7d日均行驶距离_km"]):.1f} km |')
-        w(f'| TOP 20% 用户 | {fmt_pct(top20_km, total_km):.1f}% | {safe_mean(df_km.head(int(len(df_km)*0.2))["近7d日均行驶距离_km"]):.1f} km |')
+        w(f'| TOP 10% 用户 | {fmt_pct(top10_km, total_km):.1f}% | {safe_mean(df_km.head(int(len(df_km)*0.1)).get("近7d日均行驶距离_km", pd.Series())):.1f} km |')
+        w(f'| TOP 20% 用户 | {fmt_pct(top20_km, total_km):.1f}% | {safe_mean(df_km.head(int(len(df_km)*0.2)).get("近7d日均行驶距离_km", pd.Series())):.1f} km |')
         w(f'| 全体 | 100% | {daily_km:.1f} km |')
         w()
 

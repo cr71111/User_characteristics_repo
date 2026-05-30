@@ -32,7 +32,7 @@ def generate_user_detail(df: pd.DataFrame, output_dir: str) -> str:
         '近7d总行驶距离_km', '近7d总骑行时长_h', '近7d平均骑行电流_A',
         '近7d最大电流_A', '近7d百公里电耗_kWh', '近7d最低SOC',
         '近7d出勤天数', '近7d出勤率',
-        '客户形态_综合_7d', '近7d平均包月友好分',
+        '用户形态_综合_7d', '近7d平均包月友好分',
         '重评分数', '用户等级_动态', '风险标签', '策略建议', '用户等级_动态说明',
         '用户生命周期状态_7d', '设备状态监控'
     ]
@@ -60,9 +60,9 @@ def generate_level_distribution(df: pd.DataFrame, output_dir: str) -> str:
     level_dist.columns = ['用户等级', '用户数']
     level_dist['占比'] = (level_dist['用户数'] / len(df) * 100).round(2)
 
-    # 客户形态分布
-    customer_dist = df['客户形态_综合_7d'].value_counts().reset_index()
-    customer_dist.columns = ['客户形态', '用户数']
+    # 用户形态分布
+    customer_dist = df['用户形态_综合_7d'].value_counts().reset_index()
+    customer_dist.columns = ['用户形态', '用户数']
     customer_dist['占比'] = (customer_dist['用户数'] / len(df) * 100).round(2)
 
     # 策略分布
@@ -73,7 +73,7 @@ def generate_level_distribution(df: pd.DataFrame, output_dir: str) -> str:
     with open(output_path, 'w', encoding='utf-8-sig') as f:
         f.write("用户等级分布\n")
         level_dist.to_csv(f, index=False, encoding='utf-8-sig')
-        f.write("\n客户形态分布\n")
+        f.write("\n用户形态分布\n")
         customer_dist.to_csv(f, index=False, encoding='utf-8-sig')
         f.write("\n策略建议分布\n")
         strategy_dist.to_csv(f, index=False, encoding='utf-8-sig')
@@ -178,7 +178,7 @@ def generate_attendance_detail(df: pd.DataFrame, output_dir: str) -> str:
         '用户id', '统计日期',
         '近7d出勤天数', '近7d出勤率', '近7天有数据天数',
         '单合约月度用电度数预估_kWh', '近7d总用电量_kWh',
-        '近7d总行驶距离_km', '客户形态_综合_7d', '用户等级_动态'
+        '近7d总行驶距离_km', '用户形态_综合_7d', '用户等级_动态'
     ]
     
     available_cols = [c for c in attendance_cols if c in df.columns]

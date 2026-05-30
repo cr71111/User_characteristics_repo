@@ -1,0 +1,70 @@
+📋 日志文件: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_LL3_20260530_174029.log
+🕐 开始时间: 2026-05-30 17:40:29
+
+
+================================================================================
+🚀 执行模式: FROM_L3 (从 L3 层开始重建)
+================================================================================
+   🗑️  已清除 lifecycle/ 目录
+   🗑️  已清除 reports/ 目录
+
+
+================================================================================
+L3 Lifecycle Layer - 用户生命周期层
+================================================================================
+
+[1/6] 加载快照数据...
+   加载完成：392,554 条记录
+
+[2/6] 计算7天滚动指标...
+计算7天滚动指标...
+   完成：25,643 个用户
+
+[3/6] 计算月度用电预估...
+
+❌ 流水线执行失败: [Errno 13] Permission denied: 'E:\\OneDrive\\DataBase\\DataBase\\用户行为习惯/用户特征画像\\lifecycle\\user_monthly_attendance_detail.csv'
+Traceback (most recent call last):
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\run_pipeline.py", line 357, in main
+    run_from_layer(args.layer, target_date=args.date, skip_incomplete=args.skip_incomplete)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\run_pipeline.py", line 304, in run_from_layer
+    process_lifecycle_layer(target_date=None)
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\lifecycle_layer.py", line 931, in process_lifecycle_layer
+    df_attendance_detail.to_csv(attendance_output, index=False, encoding='utf-8-sig')
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Python\Python313\Lib\site-packages\pandas\util\_decorators.py", line 333, in wrapper
+    return func(*args, **kwargs)
+  File "D:\Python\Python313\Lib\site-packages\pandas\core\generic.py", line 3986, in to_csv
+    return DataFrameRenderer(formatter).to_csv(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        path_or_buf,
+        ^^^^^^^^^^^^
+    ...<14 lines>...
+        storage_options=storage_options,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "D:\Python\Python313\Lib\site-packages\pandas\io\formats\format.py", line 1014, in to_csv
+    csv_formatter.save()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\Python\Python313\Lib\site-packages\pandas\io\formats\csvs.py", line 251, in save
+    with get_handle(
+         ~~~~~~~~~~^
+        self.filepath_or_buffer,
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+        storage_options=self.storage_options,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ) as handles:
+    ^
+  File "D:\Python\Python313\Lib\site-packages\pandas\io\common.py", line 873, in get_handle
+    handle = open(
+        handle,
+    ...<3 lines>...
+        newline="",
+    )
+PermissionError: [Errno 13] Permission denied: 'E:\\OneDrive\\DataBase\\DataBase\\用户行为习惯/用户特征画像\\lifecycle\\user_monthly_attendance_detail.csv'
+
+🕐 结束时间: 2026-05-30 17:53:24
+📋 日志已保存: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_LL3_20260530_174029.log

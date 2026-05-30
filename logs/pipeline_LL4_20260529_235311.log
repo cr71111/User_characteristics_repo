@@ -1,0 +1,68 @@
+📋 日志文件: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_LL4_20260529_235311.log
+🕐 开始时间: 2026-05-29 23:53:11
+
+
+================================================================================
+🚀 执行模式: FROM_L4 (从 L4 层开始重建)
+================================================================================
+   🗑️  已清除 reports/ 目录
+
+
+================================================================================
+L4 Report Layer - 报告输出层
+================================================================================
+
+[1/1] 加载生命周期数据...
+   ✅ 加载完成：25,470 个用户
+
+生成报告文件...
+
+❌ 流水线执行失败: [Errno 13] Permission denied: 'E:\\OneDrive\\DataBase\\DataBase\\用户行为习惯/用户特征画像\\reports\\user_detail.csv'
+Traceback (most recent call last):
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\run_pipeline.py", line 357, in main
+    run_from_layer(args.layer, target_date=args.date, skip_incomplete=args.skip_incomplete)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\run_pipeline.py", line 306, in run_from_layer
+    process_report_layer(target_date=None)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\report_layer.py", line 221, in process_report_layer
+    generate_user_detail(df, output_dir)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\report_layer.py", line 41, in generate_user_detail
+    df[available_cols].to_csv(output_path, index=False, encoding='utf-8-sig')
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Python\Python313\Lib\site-packages\pandas\util\_decorators.py", line 333, in wrapper
+    return func(*args, **kwargs)
+  File "D:\Python\Python313\Lib\site-packages\pandas\core\generic.py", line 3986, in to_csv
+    return DataFrameRenderer(formatter).to_csv(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        path_or_buf,
+        ^^^^^^^^^^^^
+    ...<14 lines>...
+        storage_options=storage_options,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "D:\Python\Python313\Lib\site-packages\pandas\io\formats\format.py", line 1014, in to_csv
+    csv_formatter.save()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\Python\Python313\Lib\site-packages\pandas\io\formats\csvs.py", line 251, in save
+    with get_handle(
+         ~~~~~~~~~~^
+        self.filepath_or_buffer,
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+        storage_options=self.storage_options,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ) as handles:
+    ^
+  File "D:\Python\Python313\Lib\site-packages\pandas\io\common.py", line 873, in get_handle
+    handle = open(
+        handle,
+    ...<3 lines>...
+        newline="",
+    )
+PermissionError: [Errno 13] Permission denied: 'E:\\OneDrive\\DataBase\\DataBase\\用户行为习惯/用户特征画像\\reports\\user_detail.csv'
+
+🕐 结束时间: 2026-05-29 23:53:11
+📋 日志已保存: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_LL4_20260529_235311.log

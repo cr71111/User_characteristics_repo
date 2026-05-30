@@ -179,7 +179,7 @@ def score_and_classify(
     idle_hours = df['近7d单合约日均怠速放电_h'].fillna(0).values
     discharge_hours = df['近7d单合约日均放电时长_h'].fillna(0).values
     monthly_energy_val = df['单合约月度用电度数预估_kWh'].fillna(0).values
-    customer_type = df.get('客户形态_综合_7d', pd.Series('未知', index=df.index)).fillna('未知').values
+    customer_type = df.get('用户形态_综合_7d', pd.Series('未知', index=df.index)).fillna('未知').values
     work_pattern = df.get('近7d工作特点', pd.Series('', index=df.index)).fillna('').values
 
     # ── B0. 沉默用户判定 ─────────────────────────────────────────────────
@@ -344,7 +344,7 @@ def score_and_classify(
 
     # ── D. 策略建议生成（向量化优化 + 差异化）────────────────────────────
     def _get_strategy(level, customer_type, vehicle_type, work_pattern):
-        """根据用户等级 + 客户形态 + 车辆形态 + 工作特点生成差异化策略"""
+        """根据用户等级 + 用户形态 + 车辆形态 + 工作特点生成差异化策略"""
         base_strategy = {
             '优质用户':'留存激励','良好用户':'维持服务',
             '普通用户':'引导升级','高损耗用户':'限制预警',
@@ -368,7 +368,7 @@ def score_and_classify(
         _get_strategy(lv, ct, vt, wp)
         for lv, ct, vt, wp in zip(
             df['用户等级_动态'].values,
-            df.get('客户形态_综合_7d', pd.Series('未知', index=df.index)).fillna('未知').values,
+            df.get('用户形态_综合_7d', pd.Series('未知', index=df.index)).fillna('未知').values,
             df.get('车辆形态_7d', pd.Series('未知', index=df.index)).fillna('未知').values,
             df.get('近7d工作特点', pd.Series('', index=df.index)).fillna('').values
         )
