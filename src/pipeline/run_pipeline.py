@@ -95,17 +95,10 @@ if src_dir not in sys.path:
 
 from config.config import DATA_OUTPUT_ROOT
 
-# 使用兼容两种运行方式的导入
-try:
-    from src.pipeline.fact_layer import process_fact_layer
-    from src.pipeline.snapshot_layer import process_snapshot_layer
-    from src.pipeline.lifecycle_layer import process_lifecycle_layer
-    from src.pipeline.report_layer import process_report_layer
-except ImportError:
-    from src.pipeline.fact_layer import process_fact_layer
-    from src.pipeline.snapshot_layer import process_snapshot_layer
-    from src.pipeline.lifecycle_layer import process_lifecycle_layer
-    from src.pipeline.report_layer import process_report_layer
+from src.pipeline.fact_layer import process_fact_layer
+from src.pipeline.snapshot_layer import process_snapshot_layer
+from src.pipeline.lifecycle_layer import process_lifecycle_layer
+from src.pipeline.report_layer import process_report_layer
 
 
 def run_full_pipeline(target_date: str = None, skip_incomplete: bool = True):

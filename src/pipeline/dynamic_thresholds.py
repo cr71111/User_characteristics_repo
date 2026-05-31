@@ -554,9 +554,10 @@ if __name__ == '__main__':
 
     # 对比统计
     total = len(result)
-    print(f'\n{'='*55}')
+    sep = '=' * 55
+    print(f'\n{sep}')
     print(f'  动态阈值分析 · 用户等级分布（n={total}）')
-    print(f'{'='*55}')
+    print(f'{sep}')
 
     cols = ['用户等级_动态', '策略建议']
     if '用户等级_综合_7d' in result.columns:

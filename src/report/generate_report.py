@@ -43,6 +43,9 @@ DATA_ROOT = r'E:\OneDrive\DataBase\DataBase\用户行为习惯\用户特征画�
 DEFAULT_INPUT_DIR = os.path.join(DATA_ROOT, 'reports')
 DEFAULT_OUTPUT_FILE = os.path.join(DATA_ROOT, '用户分析报告', '用户运营分析报告.md')
 
+# ── 业务阈值常量（与 score_layer.py 对齐）────────────
+MONTHLY_ENERGY_LOSS_THRESHOLD = 150.0  # 月用电盈亏线（度）
+
 
 def load_data(input_dir: str) -> dict:
     """加载所有数据源，返回字典"""
@@ -225,7 +228,7 @@ def generate_report(data: dict) -> str:
     monthly_energy_p90 = safe_quantile(df_att.get('单合约月度用电度数预估_kWh', pd.Series()), 0.9) if df_att is not None else 0
 
     # 超标
-    over_150 = int((df_att['单合约月度用电度数预估_kWh'] > 150).sum()) if df_att is not None else 0
+    over_150 = int((df_att['单合约月度用电度数预估_kWh'] > MONTHLY_ENERGY_LOSS_THRESHOLD).sum()) if df_att is not None else 0
 
     # 换电
     daily_swaps_mean = safe_mean(df_full.get('近7d日均换电次数', pd.Series())) if df_full is not None else 0
@@ -304,7 +307,7 @@ def generate_report(data: dict) -> str:
     w(f'| **暴力用户** | {fmt_pct(violent, total_users):.1f}%（{violent:,}人） | 存在严重电池损害行为 |')
     w(f'| **已到期合约** | {fmt_pct(expired, total_users):.1f}%（{expired:,}人） | 合约到期需关注续费 |')
     w(f'| **人月均用电预估** | {monthly_energy_mean:.1f} 度 | 中位数 {monthly_energy_med:.1f}度, P90={monthly_energy_p90:.1f}度 |')
-    w(f'| **月用电超标（>150度）** | {fmt_pct(over_150, len(df_att)):.1f}%（{over_150:,}人） | 超过盈亏线 |')
+    w(f'| **月用电超标（>{MONTHLY_ENERGY_LOSS_THRESHOLD:.0f}度）** | {fmt_pct(over_150, len(df_att)):.1f}%（{over_150:,}人） | 超过盈亏线 |')
     # 设备状态汇总
     temp_total = int(status_parsed['状态类型'].eq('暂离线').sum()) if len(status_detail) > 0 else 0
     abnormal_total = int(status_parsed['状态类型'].eq('异常离线').sum()) if len(status_detail) > 0 else 0
@@ -439,7 +442,7 @@ def generate_report(data: dict) -> str:
     w()
 
     if '用户形态_综合_7d' in df.columns:
-        ctype_order_7d = ['专送骑手', '众包骑手', '标准骑手', '普通骑手', '地摊/储能', '数据不足']
+        ctype_order_7d = ['专送骑手', '众包骑手', '地摊/储能', '数据不足']
         w('### 5.1 用户形态分布')
         w()
         w('| 用户形态 | 人数 | 占比 | 平均电流(A) | 百公里电耗(kWh) | 日均里程(km) | 平均评分 |')
@@ -452,7 +455,7 @@ def generate_report(data: dict) -> str:
         w()
 
     if '车辆形态_7d' in df.columns:
-        vtype_order_7d = ['电动自行车', '电动轻便摩托车', '电动摩托车', '改装/超速车', '数据不足']
+        vtype_order_7d = ['电动自行车', '电动轻便摩托车', '电动摩托车', '改装/超速车', '地摊/储能']
         w('### 5.2 车辆形态分布')
         w()
         w('| 车辆形态 | 人数 | 占比 | 最高车速(km/h) | 峰值功率(W) | 日均里程(km) |')
@@ -462,7 +465,7 @@ def generate_report(data: dict) -> str:
             cnt = len(sub)
             if cnt > 0:
                 w(f'| {vt} | {cnt:,} | {fmt_pct(cnt, total_users):.1f}% | {safe_mean(sub.get("近7d最高速度_kmh", pd.Series())):.1f} | {safe_mean(sub.get("近7d峰值功率_W", pd.Series())):.0f} | {safe_mean(sub.get("近7d日均行驶距离_km", pd.Series())):.2f} |')
-        w(f'> 注：车辆形态基于近7天骑行数据判定，改装/超速车判定标准为最高速度≥50km/h且平均骑行电流≥24A，或峰值功率≥8000W，或持续大电流放电≥40A')
+        w(f'> 注：车辆形态基于近7天P95速度分位数分类（电动自行车≤25km/h，轻便摩托25-50km/h，电摩>50km/h），改装/超速车需同时满足高速+高电流或峰值功率≥8000W，地摊/储能为非骑行用电场景')
         w()
 
     # ═══════════════ 5.3 众包/专送判定特征 ═══════════════
@@ -477,15 +480,15 @@ def generate_report(data: dict) -> str:
         if '近7d平均上线时间熵值' in df.columns:
             zhuan = df[df['用户形态_综合_7d'] == '专送骑手']
             zhong = df[df['用户形态_综合_7d'] == '众包骑手']
-            w(f'| 上线时间熵值 | {safe_mean(zhuan.get("近7d平均上线时间熵值", pd.Series())):.2f} | {safe_mean(zhong.get("近7d平均上线时间熵值", pd.Series())):.2f} | {safe_mean(df.get("近7d平均上线时间熵值", pd.Series())):.2f} | 专送<3.5，众包>3.5 |')
+            w(f'| 上线时间熵值 | {safe_mean(zhuan.get("近7d平均上线时间熵值", pd.Series())):.2f} | {safe_mean(zhong.get("近7d平均上线时间熵值", pd.Series())):.2f} | {safe_mean(df.get("近7d平均上线时间熵值", pd.Series())):.2f} | 专送≤3.85，众包>3.85 |')
         
         # 路线曲折系数
         if '近7d平均路线曲折系数' in df.columns:
-            w(f'| 路线曲折系数 | {safe_mean(zhuan.get("近7d平均路线曲折系数", pd.Series())):.2f} | {safe_mean(zhong.get("近7d平均路线曲折系数", pd.Series())):.2f} | {safe_mean(df.get("近7d平均路线曲折系数", pd.Series())):.2f} | 专送<2.0，众包>2.0 |')
+            w(f'| 路线曲折系数 | {safe_mean(zhuan.get("近7d平均路线曲折系数", pd.Series())):.2f} | {safe_mean(zhong.get("近7d平均路线曲折系数", pd.Series())):.2f} | {safe_mean(df.get("近7d平均路线曲折系数", pd.Series())):.2f} | 专送≤3.0，众包>3.0 |')
         
         # 速度变异系数
         if '近7d平均速度变异系数' in df.columns:
-            w(f'| 速度变异系数 | {safe_mean(zhuan.get("近7d平均速度变异系数", pd.Series())):.2f} | {safe_mean(zhong.get("近7d平均速度变异系数", pd.Series())):.2f} | {safe_mean(df.get("近7d平均速度变异系数", pd.Series())):.2f} | 专送<0.4，众包>0.4 |')
+            w(f'| 速度变异系数 | {safe_mean(zhuan.get("近7d平均速度变异系数", pd.Series())):.2f} | {safe_mean(zhong.get("近7d平均速度变异系数", pd.Series())):.2f} | {safe_mean(df.get("近7d平均速度变异系数", pd.Series())):.2f} | 专送≤1.0，众包>1.0 |')
         
         # 跨区域转移次数
         if '近7d最大跨区域转移次数' in df.columns:
@@ -615,17 +618,27 @@ def generate_report(data: dict) -> str:
     w()
 
     # 动态分析
-    shanghai_high_loss_pct = 0
+    # 动态分析：自动取高损耗率最高 和 优质率最高的城市
+    top_high_loss_city = ''
+    top_high_loss_pct = 0
+    top_excellent_city = ''
+    top_excellent_pct = 0
     if '核心活动城市' in df.columns and '用户等级_动态' in df.columns:
-        sh_sub = df[df['核心活动城市'] == '上海市']
-        if len(sh_sub) > 0:
-            shanghai_high_loss_pct = fmt_pct((sh_sub['用户等级_动态'] == '高损耗用户').sum(), len(sh_sub))
-
-    yichang_excellent_pct = 0
-    if '核心活动城市' in df.columns and '用户等级_动态' in df.columns:
-        yc_sub = df[df['核心活动城市'] == '宜昌市']
-        if len(yc_sub) > 0:
-            yichang_excellent_pct = fmt_pct((yc_sub['用户等级_动态'] == '优质用户').sum(), len(yc_sub))
+        city_stats = df.groupby('核心活动城市').agg(
+            total=('用户等级_动态', 'count'),
+            high_loss=('用户等级_动态', lambda x: (x == '高损耗用户').sum()),
+            excellent=('用户等级_动态', lambda x: (x == '优质用户').sum())
+        )
+        city_stats = city_stats[city_stats['total'] >= 5]  # 至少5人
+        if len(city_stats) > 0:
+            city_stats['high_loss_pct'] = city_stats['high_loss'] / city_stats['total'] * 100
+            city_stats['excellent_pct'] = city_stats['excellent'] / city_stats['total'] * 100
+            top_hl = city_stats['high_loss_pct'].idxmax()
+            top_high_loss_city = top_hl
+            top_high_loss_pct = city_stats.loc[top_hl, 'high_loss_pct']
+            top_ex = city_stats['excellent_pct'].idxmax()
+            top_excellent_city = top_ex
+            top_excellent_pct = city_stats.loc[top_ex, 'excellent_pct']
 
     ctype_modified = df[df['车辆形态_7d'] == '改装/超速车'] if '车辆形态_7d' in df.columns else pd.DataFrame()
     modified_cur = safe_mean(ctype_modified.get('近7d平均骑行电流_A', pd.Series())) if len(ctype_modified) > 0 else 0
@@ -642,8 +655,8 @@ def generate_report(data: dict) -> str:
 
     w('### 10.1 立即行动（P0）')
     w()
-    if shanghai_high_loss_pct > 0:
-        w(f'1. **上海区域深度排查**：上海 {shanghai_high_loss_pct:.0f}% 用户为高损耗，需逐户排查是否改装车/电池老化/运营政策过松')
+    if top_high_loss_pct > 0:
+        w(f'1. **{top_high_loss_city}区域深度排查**：该城市 {top_high_loss_pct:.0f}% 用户为高损耗，需逐户排查是否改装车/电池老化/运营政策过松')
     w(f'2. **{violent:,}名暴力用户清退**：平均最大电流 {violent_max_cur:.1f}A，远超安全线，建议限期整改否则终止服务')
     if expired > 0:
         w(f'3. **{expired:,}名到期用户续费**：{fmt_pct(int((df[df["用户生命周期状态_7d"]=="已到期"]["_状态类型"]=="异常离线").sum()), expired):.0f}% 已异常离线，需尽快推出续费优惠方案')
@@ -652,8 +665,8 @@ def generate_report(data: dict) -> str:
     w()
     if len(ctype_modified) > 0:
         w(f'4. **{len(ctype_modified):,}名改装/超速车核查**：平均电流 {modified_cur:.2f}A，人工确认是否改装车辆')
-    if yichang_excellent_pct > 0 and shanghai_high_loss_pct > 0:
-        w(f'5. **建立宜昌-上海对标学习**：将宜昌 {yichang_excellent_pct:.0f}% 优质率的运营方法复制到上海地区')
+    if top_excellent_pct > 0 and top_high_loss_pct > 0:
+        w(f'5. **建立{top_excellent_city}-{top_high_loss_city}对标学习**：将{top_excellent_city} {top_excellent_pct:.0f}% 优质率的运营方法复制到{top_high_loss_city}')
     if night_high_loss > 0:
         w(f'6. **{night_high_loss:,}名夜间高损耗用户预警**：夜间限流+电量阈值告警')
     w()

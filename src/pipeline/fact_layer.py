@@ -51,7 +51,6 @@ MIN_RIDING_DURATION_MIN = 3
 MAX_TRIP_GAP_MIN = 60
 VALID_RIDE_MIN_HOUR = 0.1
 VALID_RIDE_HOUR_FOR_PATTERN = 0.5
-PATTERN_DOMINANT_RATIO = 0.5
 # 地摊/储能场景专属判定参数（严格按照旧脚本）
 STORAGE_MIN_VALID_GPS_POINTS = 10
 STORAGE_MAX_DISTANCE_KM = 1.0
@@ -385,7 +384,7 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             
             # 在线状态统计
             if '是否在线' in group.columns:
-                online_count = (group['是否在线'] == 1).sum() | (group['是否在线'] == '是').sum() | (group['是否在线'] == True).sum()
+                online_count = ((group['是否在线'] == 1) | (group['是否在线'] == '是') | (group['是否在线'] == True)).sum()
                 res['在线率'] = round(online_count / n, 4) if n > 0 else 0
                 # 在线时长估算（基于采样间隔）
                 if n >= 2 and res['最晚记录时间戳'] > res['最早记录时间戳']:
@@ -595,8 +594,8 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             total_discharge_hours = round(total_discharge_hours, 2)
             res['总放电时长(小时)'] = total_discharge_hours
 
-            # 出勤判定：当日用电量>0即算出勤
-            is_work_day = 1 if res.get('总用电量(kWh)', 0) > 0 else 0
+            # 出勤判定：有骑行活动且有用电量才算出勤（避免地摊/储能用户误判）
+            is_work_day = 1 if (res.get('总用电量(kWh)', 0) > 0 and total_riding_hours > 0) else 0
             res['当日是否出勤'] = is_work_day
 
             # -------------------------- 8. 怠速放电时长计算 --------------------------
@@ -684,9 +683,41 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             std_voltage = DEFAULT_VOLTAGE
             if battery_id_str and battery_id_str.isdigit():
                 std_voltage = battery_voltage_map.get(int(battery_id_str), DEFAULT_VOLTAGE)
+
+            # 估算车辆功率：使用高速骑行时段的平均电流（而非瞬时峰值电流）
+            # 物理含义：车辆以接近最高速度持续行驶时的功率 ≈ 电机持续输出功率
+            # 合并速度和电流数据（同一时间戳），取速度≥P90的骑行点
+            sustained_current = max_current  # 默认回退到瞬时峰值
+            try:
+                current_col_for_power = '电流_骑行判定用' if '电流_骑行判定用' in group.columns else '电流'
+                power_df = group[['速度', current_col_for_power, '骑行状态']].dropna(
+                    subset=['速度', current_col_for_power]
+                )
+                power_df = power_df[
+                    (power_df['骑行状态'] == 1) &
+                    (power_df['速度'] > 0) &
+                    (power_df[current_col_for_power] > 0) &
+                    (power_df[current_col_for_power] <= MAX_VALID_CURRENT)
+                ]
+                if len(power_df) >= 10:
+                    speed_p90_power = power_df['速度'].quantile(0.9)
+                    high_speed_mask = power_df['速度'] >= speed_p90_power
+                    high_speed_currents = power_df.loc[high_speed_mask, current_col_for_power]
+                    if len(high_speed_currents) >= 3:
+                        # 高速骑行平均电流 → 更接近车辆持续功率能力
+                        sustained_current = high_speed_currents.mean()
+                    else:
+                        # 高速点不足，用P95电流作为回退
+                        sustained_current = power_df[current_col_for_power].quantile(0.95)
+                elif len(power_df) >= 3:
+                    # 数据量不足但有少量骑行点，用P95电流
+                    sustained_current = power_df[current_col_for_power].quantile(0.95)
+            except Exception:
+                sustained_current = max_current
+
             res['骑行平均功率_W'] = round(std_voltage * riding_avg_current, 1)
-            res['峰值功率_W'] = round(std_voltage * max_current, 1)
-            res['估算车辆功率_W'] = res['峰值功率_W']
+            res['峰值功率_W'] = round(std_voltage * max_current, 1)  # 保留原始电气峰值（用于改装检测）
+            res['估算车辆功率_W'] = round(std_voltage * sustained_current, 1)  # 速度加权持续功率
 
             if not riding_current_data.empty:
                 res['电流>60A次数'] = (riding_current_data['电流'] > NORMAL_CURRENT_THRESHOLD).sum()
@@ -885,18 +916,58 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             valid_gps_enough = (n >= STORAGE_MIN_VALID_GPS_POINTS)
             avg_speed = total_distance / total_riding_hours if total_riding_hours > 0.01 else 0
 
-            # Step 1: 基于实测最高速度进行国标分级
-            if max_speed <= EBIKE_MAX_SPEED:
-                vehicle_type = "电动自行车"
-                vehicle_desc = f"符合电动自行车国标（最大车速≤{EBIKE_MAX_SPEED}km/h），实测最高{max_speed}km/h"
-            elif max_speed <= LIGHT_MOTO_MAX_SPEED:
-                vehicle_type = "电动轻便摩托车"
-                vehicle_desc = f"符合电动轻便摩托车国标（最大车速≤{LIGHT_MOTO_MAX_SPEED}km/h），实测最高{max_speed}km/h"
-            else:
-                vehicle_type = "电动摩托车"
-                vehicle_desc = f"符合电动摩托车国标（最大车速>{LIGHT_MOTO_MAX_SPEED}km/h），实测最高{max_speed}km/h"
+            # 先判断储能/地摊（在国标分级之前，这类用户不应有车辆形态）
+            very_short_distance = (total_distance < STORAGE_MAX_DISTANCE_KM)
+            very_low_speed = (avg_speed < STORAGE_MAX_AVG_SPEED_KMH)
+            discharge_much_longer = (
+                (idle_discharge_hours > total_riding_hours * STORAGE_DISCHARGE_RATIO_THRESHOLD) &
+                (idle_discharge_hours >= STORAGE_MIN_DISCHARGE_HOUR) &
+                (total_riding_hours < 0.5)
+            )
+            ride_ratio_low = (total_riding_hours / total_discharge_hours < STORAGE_RIDE_DURATION_RATIO) if total_discharge_hours > 0 else True
+            is_storage_scene = no_real_ride and valid_gps_enough and very_short_distance and very_low_speed and discharge_much_longer and ride_ratio_low
 
-            # Step 2: 改装/超速检测
+            # 计算分类速度：使用P95分位数而非单个极值点，避免GPS噪声导致误分类
+            # 例：正常国标电动自行车，个别GPS毛刺到28km/h，P95仍约22km/h → 正确分类
+            classify_speed = max_speed  # 默认回退
+            classify_p95 = 0.0
+            if len(riding_speed_data) >= 5:
+                speeds_arr = riding_speed_data['速度'].values
+                classify_p95 = float(np.percentile(speeds_arr, 95))
+                classify_speed = classify_p95
+            elif len(riding_speed_data) >= 1:
+                classify_speed = float(riding_speed_data['速度'].max())
+
+            # ── 分支1：储能/地摊场景 ──
+            if is_storage_scene:
+                vehicle_type = "地摊/储能"
+                vehicle_desc = (f"非骑行用电场景——总距离{total_distance:.1f}km, 均速{avg_speed:.1f}km/h, "
+                                f"怠速放电{idle_discharge_hours:.1f}h, 有效GPS点{n}个")
+
+            # ── 分支2：无有效骑行数据 ──
+            elif not has_real_ride:
+                vehicle_type = "数据不足"
+                vehicle_desc = "无有效骑行数据，无法判定车辆形态"
+
+            # ── 分支3：正常骑行 → 国标分级（基于P95速度 + max_speed辅助参考）──
+            else:
+                # 基础分类：P95速度
+                if classify_speed <= EBIKE_MAX_SPEED:
+                    vehicle_type = "电动自行车"
+                    vehicle_desc = f"符合电动自行车国标（P95车速{classify_p95:.0f}km/h ≤ {EBIKE_MAX_SPEED}km/h），实测最高{max_speed}km/h"
+                elif classify_speed <= LIGHT_MOTO_MAX_SPEED:
+                    vehicle_type = "电动轻便摩托车"
+                    vehicle_desc = f"符合电动轻便摩托车国标（P95车速{classify_p95:.0f}km/h ≤ {LIGHT_MOTO_MAX_SPEED}km/h），实测最高{max_speed}km/h"
+                else:
+                    vehicle_type = "电动摩托车"
+                    vehicle_desc = f"符合电动摩托车国标（P95车速{classify_p95:.0f}km/h > {LIGHT_MOTO_MAX_SPEED}km/h），实测最高{max_speed}km/h"
+
+                # max_speed辅助参考：若max_speed明显超出当前分类，在描述中标注（不影响分类结果）
+                if (vehicle_type == "电动自行车" and max_speed > EBIKE_MAX_SPEED * 1.2) or \
+                   (vehicle_type == "电动轻便摩托车" and max_speed > LIGHT_MOTO_MAX_SPEED * 1.2):
+                    vehicle_desc += f"（注: 实测最高{max_speed}km/h 超出分类阈值，可能有个别高速骑行或GPS噪声）"
+
+            # Step 2: 改装/超速检测（覆盖正常分类）
             peak_power_w = res['峰值功率_W']
             avg_power_w = res['骑行平均功率_W']
             is_modified = False
@@ -914,35 +985,20 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             if is_modified:
                 vehicle_type = "改装/超速车"
                 vehicle_desc = f"行驶特征异常——{modify_reason}，存在改装或超速嫌疑"
-            elif not has_real_ride:
-                vehicle_type = "数据不足"
-                vehicle_desc = "无有效骑行数据，无法判定车辆形态"
+
             res['车辆形态'] = vehicle_type
             res['车辆形态说明'] = vehicle_desc
 
             # -------------------------- 14.5. 用户形态判定 --------------------------
-            very_short_distance = (total_distance < STORAGE_MAX_DISTANCE_KM)
-            very_low_speed = (avg_speed < STORAGE_MAX_AVG_SPEED_KMH)
-
-            discharge_much_longer = (
-                (idle_discharge_hours > total_riding_hours * STORAGE_DISCHARGE_RATIO_THRESHOLD) & 
-                (idle_discharge_hours >= STORAGE_MIN_DISCHARGE_HOUR) &
-                (total_riding_hours < 0.5)
-            )
-            ride_ratio_low = (total_riding_hours / total_discharge_hours < STORAGE_RIDE_DURATION_RATIO) if total_discharge_hours > 0 else True
-
-            is_storage_scene = no_real_ride and valid_gps_enough and very_short_distance and very_low_speed and discharge_much_longer and ride_ratio_low
-
+            # is_storage_scene 已在 14. 车辆形态判定 中计算，直接复用
             if is_storage_scene:
                 customer_type = "地摊/储能"
             elif has_real_ride and total_riding_hours >= 4.0 and peak_riding_ratio >= 0.3:
                 customer_type = "专送骑手"
-            elif has_real_ride and total_riding_hours >= 2.0 and peak_riding_ratio >= 0.15:
-                customer_type = "众包骑手"
-            elif has_real_ride and total_distance <= 30 and total_riding_hours <= 2.0:
-                customer_type = "标准骑手"
             elif has_real_ride:
-                customer_type = "普通骑手"
+                # 有骑行但不满足专送条件（时长不足4h或高峰占比不足30%），归为众包骑手
+                # lifecycle层会基于7天聚合数据重新判定（可能升级为专送或降为数据不足）
+                customer_type = "众包骑手"
             else:
                 customer_type = "数据不足"
             res['用户形态'] = customer_type
@@ -1044,10 +1100,6 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
                 type_desc = f"工作特征显著（当日骑行{total_riding_hours:.1f}小时，高峰骑行占比{peak_riding_ratio*100:.0f}%），工作时长稳定且午晚高峰高度活跃，活动范围{res.get('R90日常活动半径', 0):.1f}km，符合专送骑手画像"
             elif current_type == "众包骑手":
                 type_desc = f"具有兼职骑手特征（当日骑行{total_riding_hours:.1f}小时，高峰骑行占比{peak_riding_ratio*100:.0f}%），高峰时段有一定活跃度，符合众包骑手画像"
-            elif current_type == "标准骑手":
-                type_desc = f"骑行行为规律（当日行驶里程{total_distance}km，骑行时长{total_riding_hours:.1f}小时），属于标准日常使用场景"
-            elif current_type == "普通骑手":
-                type_desc = f"有常规骑行行为（当日行驶里程{total_distance}km，骑行时长{total_riding_hours:.1f}小时），不符合特定骑手标签特征"
             else:
                 type_desc = "无有效骑行数据或数据量不足，无法判定具体使用场景"
             res['用户形态说明'] = type_desc

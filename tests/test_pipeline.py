@@ -85,7 +85,7 @@ def create_mock_raw_data(n_days=7):
             'pattern': 'commute',
             'base_lat': 31.20, 'base_lon': 121.55,
             'speed_kmh': 18, 'avg_current': 8, 'max_current': 15,
-            'label': '电动自行车（≤25km/h，车辆=电动自行车，客户=标准骑手）',
+            'label': '电动自行车（≤25km/h，车辆=电动自行车，客户=众包骑手）',
         },
         {
             'user_id': 'USER_EMOPED_03',
@@ -101,7 +101,7 @@ def create_mock_raw_data(n_days=7):
             'pattern': 'wide',
             'base_lat': 31.18, 'base_lon': 121.60,
             'speed_kmh': 55, 'avg_current': 10, 'max_current': 20,
-            'label': '电动摩托车（>50km/h但低电流，车辆=电动摩托车，客户=普通骑手）',
+            'label': '电动摩托车（>50km/h但低电流，车辆=电动摩托车，客户=众包骑手）',
         },
         {
             'user_id': 'USER_STORAGE_05',

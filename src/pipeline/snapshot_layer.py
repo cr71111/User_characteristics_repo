@@ -91,7 +91,7 @@ def _get_level_desc(levels, descs):
 
 def _get_type_desc(types, descs):
     """获取用户形态说明"""
-    priority = ["地摊/储能", "专送骑手", "众包骑手", "标准骑手", "普通骑手", "数据不足"]
+    priority = ["地摊/储能", "专送骑手", "众包骑手", "数据不足"]
     temp_df = pd.DataFrame({'type': types, 'desc': descs})
     for t in priority:
         if t in temp_df['type'].values:
@@ -146,10 +146,6 @@ def _generate_type_desc(row):
         return f"工作特征显著（当日骑行{row['骑行总耗时(小时)']:.1f}小时，高峰骑行占比{row['高峰骑行占比']*100:.0f}%），工作时长稳定且午晚高峰高度活跃，活动半径{r90:.1f}km，符合专送骑手画像"
     elif current_type == "众包骑手":
         return f"具有兼职骑手特征（当日骑行{row['骑行总耗时(小时)']:.1f}小时，高峰骑行占比{row['高峰骑行占比']*100:.0f}%），高峰时段有一定活跃度，符合众包骑手画像"
-    elif current_type == "标准骑手":
-        return f"骑行行为规律（当日行驶里程{row['行驶距离']}km，骑行时长{row['骑行总耗时(小时)']:.1f}小时），属于标准日常使用场景"
-    elif current_type == "普通骑手":
-        return f"有常规骑行行为（当日行驶里程{row['行驶距离']}km，骑行时长{row['骑行总耗时(小时)']:.1f}小时），不符合特定骑手标签特征"
     else:
         return "无有效骑行数据或数据量不足，无法判定具体使用场景"
 

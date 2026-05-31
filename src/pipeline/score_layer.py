@@ -303,7 +303,7 @@ def score_and_classify(
     s = df['重评分数'].values
     risk = df['风险标签'].fillna('正常').values
     
-    is_violent = (over100 >= 2) | (over100_hours >= OVER100A_HOURS_THRESHOLD_7D) | (max_cur > max_cur_P99) | (monthly_energy_val > MONTHLY_ENERGY_VIOLENT_THRESHOLD)
+    is_violent = (over100 >= 2) | (over100_hours >= OVER100A_HOURS_THRESHOLD_7D) | (max_cur > max_cur_P99) | (monthly_energy_val > MONTHLY_ENERGY_VIOLENT_THRESHOLD) | ((soc_below_10_ratio >= 0.20) & (min_soc <= 5))
     
     has_violent_risk = np.array(['暴力放电' in r or '极端电流' in r for r in risk])
     has_high_risk = np.array(['超保护板电流' in r or '频繁超80A' in r for r in risk])
@@ -323,7 +323,7 @@ def score_and_classify(
     
     medium_risk_mask = has_medium_risk & ~is_violent & ~high_risk_mask & ~is_silent
     result_level[medium_risk_mask & (s >= score_P_excellent)] = '良好用户'
-    result_level[medium_risk_mask & (s >= score_P_good) & (s < score_P_excellent)] = '良好用户'
+    result_level[medium_risk_mask & (s >= score_P_good) & (s < score_P_excellent)] = '普通用户'
     result_level[medium_risk_mask & (s >= score_P_normal) & (s < score_P_good)] = '普通用户'
     result_level[medium_risk_mask & (s < score_P_normal)] = '高损耗用户'
     
@@ -359,7 +359,7 @@ def score_and_classify(
             return '非正常用电核查'
         if customer_type == '众包骑手' and level == '普通用户':
             return '众包骑手引导'
-        if work_pattern in ('习惯晚上',) and level in ('高损耗用户',):
+        if '晚上' in work_pattern and level in ('高损耗用户',):
             return '夜间高损耗预警'
         
         return base_strategy
@@ -399,7 +399,7 @@ def score_and_classify(
     
     risk_tips = np.where(risks != '正常', '风险：' + risks, '')
     
-    energy_warnings = np.where(monthly_energies > 150, 
+    energy_warnings = np.where(monthly_energies > MONTHLY_ENERGY_LOSS_THRESHOLD, 
                               '⚠️月用电' + monthly_energies.astype(int).astype(str) + '度超标', '')
     
     df['用户等级_动态说明'] = pd.Series([
