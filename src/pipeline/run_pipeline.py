@@ -36,6 +36,9 @@ Run Pipeline - 数据流水线主入口
     python src/pipeline/run_pipeline.py --layer L3
     python src/pipeline/run_pipeline.py --layer L4
 
+    # 仅重建最近7天（避免全量OOM，修改fact逻辑后推荐）
+    python src/pipeline/run_pipeline.py --layer L1 --days 7
+
     # 关闭数据完整性检查
     python src/pipeline/run_pipeline.py --mode incremental --skip-incomplete false
 """
@@ -259,8 +262,15 @@ def _clear_directory(dir_path: str, dir_label: str) -> bool:
     return failed == 0
 
 
-def run_from_layer(layer: str, target_date: str = None, skip_incomplete: bool = True):
-    """从指定层开始重建：清除该层及下游数据，然后重算"""
+def run_from_layer(layer: str, target_date: str = None, skip_incomplete: bool = True, recent_days: int = None):
+    """从指定层开始重建：清除该层及下游数据，然后重算
+
+    Args:
+        layer: 起始层级 (L1/L2/L3/L4)
+        target_date: 目标日期 YYYY-MM-DD
+        skip_incomplete: 是否跳过数据不完整的日期
+        recent_days: 仅处理最近N天的源数据（仅对 L1 生效），避免全量重算 OOM
+    """
 
     layer_order = ['L1', 'L2', 'L3', 'L4']
     layer_dirs = {
@@ -275,22 +285,36 @@ def run_from_layer(layer: str, target_date: str = None, skip_incomplete: bool = 
         return
 
     start_idx = layer_order.index(layer)
+    mode_label = f"FROM_{layer}"
+    if recent_days and layer == 'L1':
+        mode_label += f" (最近{recent_days}天)"
+
     print("\n" + "=" * 80)
-    print(f"🚀 执行模式: FROM_{layer} (从 {layer} 层开始重建)")
+    print(f"🚀 执行模式: {mode_label}")
     print("=" * 80)
 
     start_time = datetime.now()
 
-    for i in range(start_idx, len(layer_order)):
-        l = layer_order[i]
-        dir_name = layer_dirs[l]
-        dir_path = os.path.join(DATA_OUTPUT_ROOT, dir_name)
-        _clear_directory(dir_path, dir_name)
+    if recent_days and layer == 'L1':
+        fact_dir = os.path.join(DATA_OUTPUT_ROOT, 'fact')
+        _clear_directory(fact_dir, 'fact')
+
+        for i in range(1, len(layer_order)):
+            l = layer_order[i]
+            dir_name = layer_dirs[l]
+            dir_path = os.path.join(DATA_OUTPUT_ROOT, dir_name)
+            _clear_directory(dir_path, dir_name)
+    else:
+        for i in range(start_idx, len(layer_order)):
+            l = layer_order[i]
+            dir_name = layer_dirs[l]
+            dir_path = os.path.join(DATA_OUTPUT_ROOT, dir_name)
+            _clear_directory(dir_path, dir_name)
 
     print()
 
     if start_idx <= 0:
-        process_fact_layer(target_date=None, skip_incomplete=skip_incomplete)
+        process_fact_layer(target_date=None, skip_incomplete=skip_incomplete, recent_days=recent_days)
     if start_idx <= 1:
         process_snapshot_layer(target_date=None)
     if start_idx <= 2:
@@ -333,6 +357,12 @@ def main():
         const=True,
         help='跳过数据不完整的日期（默认开启）。使用 --skip-incomplete false 关闭'
     )
+    parser.add_argument(
+        '--days',
+        type=int,
+        default=None,
+        help='仅处理最近N天的源数据（仅对 --layer L1 生效），避免全量重算时 OOM。例如 --layer L1 --days 7'
+    )
 
     args = parser.parse_args()
 
@@ -347,7 +377,7 @@ def main():
         print()
 
         if args.layer:
-            run_from_layer(args.layer, target_date=args.date, skip_incomplete=args.skip_incomplete)
+            run_from_layer(args.layer, target_date=args.date, skip_incomplete=args.skip_incomplete, recent_days=args.days)
         else:
             mode_map = {
                 'full': run_full_pipeline,

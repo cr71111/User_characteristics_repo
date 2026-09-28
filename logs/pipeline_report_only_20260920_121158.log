@@ -1,0 +1,31 @@
+📋 日志文件: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_report_only_20260920_121158.log
+🕐 开始时间: 2026-09-20 12:11:58
+
+
+================================================================================
+🚀 执行模式: REPORT_ONLY (仅报告)
+================================================================================
+
+================================================================================
+L4 Report Layer - 报告输出层
+================================================================================
+
+[1/1] 加载生命周期数据...
+   ✅ 加载完成：29,201 个用户
+
+生成报告文件...
+   ✅ 用户明细: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\user_detail.csv
+   ✅ 用户7天滚动全量数据: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\user_7d_full.csv (29,201 用户, 109 字段)
+   ✅ 等级分布: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\level_distribution.csv
+   ✅ 风险告警: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\risk_alerts.csv (10220 用户)
+   ✅ 月度出勤预估明细: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\user_monthly_attendance_detail.csv (29,201 用户)
+   ✅ 漂移报告: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\shift_report.json
+   ✅ 文本摘要: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\summary.txt
+
+✅ L4 Report Layer 完成，报告目录: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports
+
+⏱️  报告生成完成，总耗时: 3.21 秒
+
+✅ 流水线执行成功
+🕐 结束时间: 2026-09-20 12:12:01
+📋 日志已保存: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_report_only_20260920_121158.log

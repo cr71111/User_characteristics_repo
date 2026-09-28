@@ -1,0 +1,396 @@
+📋 日志文件: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_refresh_20260920_121403.log
+🕐 开始时间: 2026-09-20 12:14:03
+
+
+================================================================================
+🚀 执行模式: REFRESH (刷新聚合)
+================================================================================
+
+================================================================================
+L2 Snapshot Layer - 用户日级快照层
+================================================================================
+
+📊 处理日期: 2026-09-02
+
+📊 处理日期: 2026-09-03
+
+📊 处理日期: 2026-09-04
+
+📊 处理日期: 2026-09-05
+
+📊 处理日期: 2026-09-06
+
+📊 处理日期: 2026-09-07
+
+📊 处理日期: 2026-09-08
+
+📊 处理日期: 2026-09-09
+
+📊 处理日期: 2026-09-10
+
+📊 处理日期: 2026-09-11
+
+📊 处理日期: 2026-09-12
+
+📊 处理日期: 2026-09-13
+
+📊 处理日期: 2026-09-14
+
+📊 处理日期: 2026-09-15
+
+📊 处理日期: 2026-09-16
+
+📊 处理日期: 2026-09-17
+
+📊 处理日期: 2026-09-18
+
+📊 处理日期: 2026-09-19
+
+❌ 流水线执行失败: Schema at index 1 was different: 
+统计日期: date32[day]
+用户id: large_string
+关联合约数: int64
+当日总行驶距离_km: double
+当日总骑行时长_h: double
+当日总放电时长_h: double
+当日总怠速放电时长_h: double
+当日平均骑行放电比: double
+当日总用电量_kWh: double
+当日总骑行次数: int64
+当日总换电次数: int64
+单合约日均行驶里程_km: double
+单合约日均骑行时长_h: double
+单合约日均放电时长_h: double
+单合约日均怠速放电_h: double
+单合约日均用电量_kWh: double
+午间高峰长时骑行总次数: int64
+晚间高峰长时骑行总次数: int64
+平峰长时骑行总次数: int64
+夜间长时骑行总次数: int64
+午间高峰总里程_km: double
+晚间高峰总里程_km: double
+平峰总里程_km: double
+夜间总里程_km: double
+总电流超60A次数: int64
+总电流超80A次数: int64
+总超100A连续次数: int64
+总超100A累计时长_h: double
+当日最高速度_kmh: double
+当日最大电流_A: double
+当日最高温度_℃: double
+当日最低SOC: double
+最低包月友好分: int64
+最大单合约活动半径_km: double
+R90活动半径_km: double
+最大凸包覆盖面积_km2: double
+最大单次出行距离_km: double
+当日是否出勤: int64
+平均包月友好分: double
+当日平均骑行SOC: double
+当日平均骑行速度_kmh: double
+当日平均骑行电流_A: double
+当日百公里电耗_kWh: double
+高峰骑行占比: double
+SOC低于20%时长占比_当日: double
+SOC低于10%时长占比_当日: double
+当日平峰换电次数: int64
+当日深夜换电次数: int64
+当日高峰换电次数: int64
+平峰换电占比_当日: double
+深夜换电占比_当日: double
+取电时平均SOC_当日: double
+还电时平均SOC_当日: double
+单次换电平均SOC消耗_当日: double
+当日P50骑行速度_kmh: double
+当日P90骑行速度_kmh: double
+当日夜间骑行均速_kmh: double
+当日高速骑行点数: int64
+当日峰值功率_W: double
+当日平均骑行功率_W: double
+最早骑行时刻_h: double
+最晚骑行时刻_h: double
+当日上线时间熵值: double
+当日骑行时段集中度: double
+当日路线曲折系数: double
+当日速度变异系数: double
+当日跨区域转移次数: int64
+当日静止时长占比: double
+核心活动省份: large_string
+核心活动城市: large_string
+核心活动区县: large_string
+风险标签_电流异常: large_string
+用户形态_综合: large_string
+车辆形态_综合: large_string
+用户等级_综合: large_string
+偏好换电时段_综合: large_string
+主要骑行时段_综合: large_string
+用户等级_综合说明: large_string
+用户形态_综合说明: large_string
+车辆形态_综合说明: large_string
+当日估算车辆功率_W: string
+vs
+统计日期: date32[day]
+用户id: large_string
+关联合约数: int64
+当日总行驶距离_km: double
+当日总骑行时长_h: double
+当日总放电时长_h: double
+当日总怠速放电时长_h: double
+当日平均骑行放电比: double
+当日总用电量_kWh: double
+当日总骑行次数: int64
+当日总换电次数: int64
+单合约日均行驶里程_km: double
+单合约日均骑行时长_h: double
+单合约日均放电时长_h: double
+单合约日均怠速放电_h: double
+单合约日均用电量_kWh: double
+午间高峰长时骑行总次数: int64
+晚间高峰长时骑行总次数: int64
+平峰长时骑行总次数: int64
+夜间长时骑行总次数: int64
+午间高峰总里程_km: double
+晚间高峰总里程_km: double
+平峰总里程_km: double
+夜间总里程_km: double
+总电流超60A次数: int64
+总电流超80A次数: int64
+总超100A连续次数: int64
+总超100A累计时长_h: double
+当日最高速度_kmh: double
+当日最大电流_A: double
+当日最高温度_℃: double
+当日最低SOC: double
+最低包月友好分: int64
+最大单合约活动半径_km: double
+R90活动半径_km: double
+最大凸包覆盖面积_km2: double
+最大单次出行距离_km: double
+当日是否出勤: int64
+平均包月友好分: double
+当日平均骑行SOC: double
+当日平均骑行速度_kmh: double
+当日平均骑行电流_A: double
+当日百公里电耗_kWh: double
+高峰骑行占比: double
+SOC低于20%时长占比_当日: double
+SOC低于10%时长占比_当日: double
+当日平峰换电次数: int64
+当日深夜换电次数: int64
+当日高峰换电次数: int64
+平峰换电占比_当日: double
+深夜换电占比_当日: double
+取电时平均SOC_当日: double
+还电时平均SOC_当日: double
+单次换电平均SOC消耗_当日: double
+当日P50骑行速度_kmh: double
+当日P90骑行速度_kmh: double
+当日夜间骑行均速_kmh: double
+当日高速骑行点数: int64
+当日峰值功率_W: double
+当日平均骑行功率_W: double
+当日估算车辆功率_W: string
+最早骑行时刻_h: double
+最晚骑行时刻_h: double
+当日上线时间熵值: double
+当日骑行时段集中度: double
+当日路线曲折系数: double
+当日速度变异系数: double
+当日跨区域转移次数: int64
+当日静止时长占比: double
+核心活动省份: large_string
+核心活动城市: large_string
+核心活动区县: large_string
+风险标签_电流异常: large_string
+用户形态_综合: large_string
+车辆形态_综合: large_string
+用户等级_综合: large_string
+偏好换电时段_综合: large_string
+主要骑行时段_综合: large_string
+用户等级_综合说明: large_string
+用户形态_综合说明: large_string
+车辆形态_综合说明: large_string
+Traceback (most recent call last):
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\run_pipeline.py", line 390, in main
+    pipeline_func(target_date=args.date, skip_incomplete=args.skip_incomplete)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\run_pipeline.py", line 180, in run_refresh
+    process_snapshot_layer(target_date=target_date)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\snapshot_layer.py", line 442, in process_snapshot_layer
+    append_to_snapshot(df_snapshot, output_path)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\snapshot_layer.py", line 202, in append_to_snapshot
+    df = pa.concat_tables([table_old, table_new]).to_pandas()
+         ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "pyarrow/table.pxi", line 6268, in pyarrow.lib.concat_tables
+  File "pyarrow/error.pxi", line 155, in pyarrow.lib.pyarrow_internal_check_status
+  File "pyarrow/error.pxi", line 92, in pyarrow.lib.check_status
+    raise convert_status(status)
+pyarrow.lib.ArrowInvalid: Schema at index 1 was different: 
+统计日期: date32[day]
+用户id: large_string
+关联合约数: int64
+当日总行驶距离_km: double
+当日总骑行时长_h: double
+当日总放电时长_h: double
+当日总怠速放电时长_h: double
+当日平均骑行放电比: double
+当日总用电量_kWh: double
+当日总骑行次数: int64
+当日总换电次数: int64
+单合约日均行驶里程_km: double
+单合约日均骑行时长_h: double
+单合约日均放电时长_h: double
+单合约日均怠速放电_h: double
+单合约日均用电量_kWh: double
+午间高峰长时骑行总次数: int64
+晚间高峰长时骑行总次数: int64
+平峰长时骑行总次数: int64
+夜间长时骑行总次数: int64
+午间高峰总里程_km: double
+晚间高峰总里程_km: double
+平峰总里程_km: double
+夜间总里程_km: double
+总电流超60A次数: int64
+总电流超80A次数: int64
+总超100A连续次数: int64
+总超100A累计时长_h: double
+当日最高速度_kmh: double
+当日最大电流_A: double
+当日最高温度_℃: double
+当日最低SOC: double
+最低包月友好分: int64
+最大单合约活动半径_km: double
+R90活动半径_km: double
+最大凸包覆盖面积_km2: double
+最大单次出行距离_km: double
+当日是否出勤: int64
+平均包月友好分: double
+当日平均骑行SOC: double
+当日平均骑行速度_kmh: double
+当日平均骑行电流_A: double
+当日百公里电耗_kWh: double
+高峰骑行占比: double
+SOC低于20%时长占比_当日: double
+SOC低于10%时长占比_当日: double
+当日平峰换电次数: int64
+当日深夜换电次数: int64
+当日高峰换电次数: int64
+平峰换电占比_当日: double
+深夜换电占比_当日: double
+取电时平均SOC_当日: double
+还电时平均SOC_当日: double
+单次换电平均SOC消耗_当日: double
+当日P50骑行速度_kmh: double
+当日P90骑行速度_kmh: double
+当日夜间骑行均速_kmh: double
+当日高速骑行点数: int64
+当日峰值功率_W: double
+当日平均骑行功率_W: double
+最早骑行时刻_h: double
+最晚骑行时刻_h: double
+当日上线时间熵值: double
+当日骑行时段集中度: double
+当日路线曲折系数: double
+当日速度变异系数: double
+当日跨区域转移次数: int64
+当日静止时长占比: double
+核心活动省份: large_string
+核心活动城市: large_string
+核心活动区县: large_string
+风险标签_电流异常: large_string
+用户形态_综合: large_string
+车辆形态_综合: large_string
+用户等级_综合: large_string
+偏好换电时段_综合: large_string
+主要骑行时段_综合: large_string
+用户等级_综合说明: large_string
+用户形态_综合说明: large_string
+车辆形态_综合说明: large_string
+当日估算车辆功率_W: string
+vs
+统计日期: date32[day]
+用户id: large_string
+关联合约数: int64
+当日总行驶距离_km: double
+当日总骑行时长_h: double
+当日总放电时长_h: double
+当日总怠速放电时长_h: double
+当日平均骑行放电比: double
+当日总用电量_kWh: double
+当日总骑行次数: int64
+当日总换电次数: int64
+单合约日均行驶里程_km: double
+单合约日均骑行时长_h: double
+单合约日均放电时长_h: double
+单合约日均怠速放电_h: double
+单合约日均用电量_kWh: double
+午间高峰长时骑行总次数: int64
+晚间高峰长时骑行总次数: int64
+平峰长时骑行总次数: int64
+夜间长时骑行总次数: int64
+午间高峰总里程_km: double
+晚间高峰总里程_km: double
+平峰总里程_km: double
+夜间总里程_km: double
+总电流超60A次数: int64
+总电流超80A次数: int64
+总超100A连续次数: int64
+总超100A累计时长_h: double
+当日最高速度_kmh: double
+当日最大电流_A: double
+当日最高温度_℃: double
+当日最低SOC: double
+最低包月友好分: int64
+最大单合约活动半径_km: double
+R90活动半径_km: double
+最大凸包覆盖面积_km2: double
+最大单次出行距离_km: double
+当日是否出勤: int64
+平均包月友好分: double
+当日平均骑行SOC: double
+当日平均骑行速度_kmh: double
+当日平均骑行电流_A: double
+当日百公里电耗_kWh: double
+高峰骑行占比: double
+SOC低于20%时长占比_当日: double
+SOC低于10%时长占比_当日: double
+当日平峰换电次数: int64
+当日深夜换电次数: int64
+当日高峰换电次数: int64
+平峰换电占比_当日: double
+深夜换电占比_当日: double
+取电时平均SOC_当日: double
+还电时平均SOC_当日: double
+单次换电平均SOC消耗_当日: double
+当日P50骑行速度_kmh: double
+当日P90骑行速度_kmh: double
+当日夜间骑行均速_kmh: double
+当日高速骑行点数: int64
+当日峰值功率_W: double
+当日平均骑行功率_W: double
+当日估算车辆功率_W: string
+最早骑行时刻_h: double
+最晚骑行时刻_h: double
+当日上线时间熵值: double
+当日骑行时段集中度: double
+当日路线曲折系数: double
+当日速度变异系数: double
+当日跨区域转移次数: int64
+当日静止时长占比: double
+核心活动省份: large_string
+核心活动城市: large_string
+核心活动区县: large_string
+风险标签_电流异常: large_string
+用户形态_综合: large_string
+车辆形态_综合: large_string
+用户等级_综合: large_string
+偏好换电时段_综合: large_string
+主要骑行时段_综合: large_string
+用户等级_综合说明: large_string
+用户形态_综合说明: large_string
+车辆形态_综合说明: large_string
+
+🕐 结束时间: 2026-09-20 13:07:17
+📋 日志已保存: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_refresh_20260920_121403.log

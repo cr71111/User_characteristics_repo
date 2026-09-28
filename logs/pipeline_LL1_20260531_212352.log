@@ -1,0 +1,134 @@
+📋 日志文件: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_LL1_20260531_212352.log
+🕐 开始时间: 2026-05-31 21:23:52
+
+
+================================================================================
+🚀 执行模式: FROM_L1 (从 L1 层开始重建)
+================================================================================
+   🗑️  已清除 fact/ 目录
+   🗑️  已清除 snapshot/ 目录
+   🗑️  已清除 lifecycle/ 目录
+   🗑️  已清除 reports/ 目录
+
+
+================================================================================
+L1 Fact Layer - 客观事实层
+================================================================================
+🔋 电池电压映射表加载完成：99,504 条有效记录
+
+📊 处理日期: 2026-04-23
+   ✅ 加载完成：11,010,566 行数据
+   ⚠️  数据不完整(2026-04-23): 时间跨度仅12.5h（要求≥20h）; 仅覆盖13/24个小时（要求≥20），跳过统计
+
+📊 处理日期: 2026-04-24
+   ✅ 加载完成：16,024,463 行数据
+   ✅ 清洗完成：15,856,327 行有效数据
+🗺️  执行GPS空间匹配...
+🗺️  加载地理围栏数据...
+✅ 三级围栏加载完成：省 42 个，市 388 个，区县 2898 个，耗时5.27s
+   🗺️ 坐标降维：19447 个点 -> 17290 个唯一坐标
+   🗺️ 正在执行空间匹配（降维后）...
+   ✅ L1 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-04-24.parquet (19,450 个合约日记录)
+
+📊 处理日期: 2026-04-25
+   ✅ 加载完成：16,504,991 行数据
+   ✅ 清洗完成：16,318,461 行有效数据
+🗺️  执行GPS空间匹配...
+   🗺️ 坐标降维：19395 个点 -> 17232 个唯一坐标
+   🗺️ 正在执行空间匹配（降维后）...
+   ✅ L1 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-04-25.parquet (19,398 个合约日记录)
+
+📊 处理日期: 2026-04-26
+   ✅ 加载完成：16,085,596 行数据
+   ✅ 清洗完成：15,868,354 行有效数据
+🗺️  执行GPS空间匹配...
+   🗺️ 坐标降维：19263 个点 -> 17132 个唯一坐标
+   🗺️ 正在执行空间匹配（降维后）...
+   ✅ L1 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-04-26.parquet (19,266 个合约日记录)
+
+📊 处理日期: 2026-04-27
+   ✅ 加载完成：15,116,522 行数据
+   ✅ 清洗完成：14,912,004 行有效数据
+🗺️  执行GPS空间匹配...
+   🗺️ 坐标降维：19104 个点 -> 17071 个唯一坐标
+   🗺️ 正在执行空间匹配（降维后）...
+   ✅ L1 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-04-27.parquet (19,110 个合约日记录)
+
+📊 处理日期: 2026-04-28
+   ✅ 加载完成：15,106,610 行数据
+   ✅ 清洗完成：14,916,644 行有效数据
+🗺️  执行GPS空间匹配...
+   🗺️ 坐标降维：18941 个点 -> 16909 个唯一坐标
+   🗺️ 正在执行空间匹配（降维后）...
+   ✅ L1 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-04-28.parquet (18,944 个合约日记录)
+
+📊 处理日期: 2026-04-29
+   ✅ 加载完成：6,229,666 行数据
+   ⚠️  数据不完整(2026-04-29): 时间跨度仅8.6h（要求≥20h）; 仅覆盖9/24个小时（要求≥20），跳过统计
+
+📊 处理日期: 2026-04-30
+   ✅ 加载完成：15,593,768 行数据
+   ✅ 清洗完成：15,325,401 行有效数据
+🗺️  执行GPS空间匹配...
+   🗺️ 坐标降维：18753 个点 -> 16673 个唯一坐标
+   🗺️ 正在执行空间匹配（降维后）...
+   ✅ L1 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-04-30.parquet (18,764 个合约日记录)
+
+📊 处理日期: 2026-05-01
+   ✅ 加载完成：15,218,484 行数据
+   ✅ 清洗完成：14,953,380 行有效数据
+🗺️  执行GPS空间匹配...
+   🗺️ 坐标降维：18556 个点 -> 16507 个唯一坐标
+   🗺️ 正在执行空间匹配（降维后）...
+   ✅ L1 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-01.parquet (18,563 个合约日记录)
+
+📊 处理日期: 2026-05-02
+   ✅ 加载完成：14,684,724 行数据
+   ✅ 清洗完成：14,404,319 行有效数据
+🗺️  执行GPS空间匹配...
+   🗺️ 坐标降维：18295 个点 -> 16288 个唯一坐标
+   🗺️ 正在执行空间匹配（降维后）...
+   ✅ L1 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-02.parquet (18,298 个合约日记录)
+
+📊 处理日期: 2026-05-03
+   ✅ 加载完成：14,650,566 行数据
+   ✅ 清洗完成：14,366,193 行有效数据
+🗺️  执行GPS空间匹配...
+   🗺️ 坐标降维：18184 个点 -> 16191 个唯一坐标
+   🗺️ 正在执行空间匹配（降维后）...
+   ✅ L1 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-03.parquet (18,194 个合约日记录)
+
+📊 处理日期: 2026-05-04
+   ✅ 加载完成：14,904,948 行数据
+   ✅ 清洗完成：14,612,590 行有效数据
+🗺️  执行GPS空间匹配...
+   🗺️ 坐标降维：18184 个点 -> 16239 个唯一坐标
+   🗺️ 正在执行空间匹配（降维后）...
+   ✅ L1 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-04.parquet (18,190 个合约日记录)
+
+📊 处理日期: 2026-05-05
+   ✅ 加载完成：15,490,688 行数据
+   ✅ 清洗完成：15,174,585 行有效数据
+
+❌ 流水线执行失败: bad allocation
+Traceback (most recent call last):
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\run_pipeline.py", line 350, in main
+    run_from_layer(args.layer, target_date=args.date, skip_incomplete=args.skip_incomplete)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\run_pipeline.py", line 293, in run_from_layer
+    process_fact_layer(target_date=None, skip_incomplete=skip_incomplete)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\fact_layer.py", line 1238, in process_fact_layer
+    df_result = calc_contract_metrics(df_clean, battery_voltage_map)
+  File "E:\OneDrive\DataBase\User_characteristics_repo\src\pipeline\fact_layer.py", line 899, in calc_contract_metrics
+    db = DBSCAN(eps=0.001, min_samples=3, metric='haversine').fit(coords_rad)
+  File "C:\Users\CR71\AppData\Local\Programs\Python\Python313\Lib\site-packages\sklearn\base.py", line 1336, in wrapper
+    return fit_method(estimator, *args, **kwargs)
+  File "C:\Users\CR71\AppData\Local\Programs\Python\Python313\Lib\site-packages\sklearn\cluster\_dbscan.py", line 463, in fit
+    dbscan_inner(core_samples, neighborhoods, labels)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "sklearn/cluster/_dbscan_inner.pyx", line 34, in sklearn.cluster._dbscan_inner.dbscan_inner
+MemoryError: bad allocation
+
+🕐 结束时间: 2026-06-01 02:03:36
+📋 日志已保存: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_LL1_20260531_212352.log

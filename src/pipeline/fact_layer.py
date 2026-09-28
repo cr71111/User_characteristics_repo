@@ -8,6 +8,7 @@ L1 Fact Layer - 客观事实层
 """
 
 import os
+import re
 import sys
 import time
 import math
@@ -38,6 +39,20 @@ from src.pipeline.score_common import (
 # ==============================================================================
 # 全局配置参数（严格按照旧脚本）
 # ==============================================================================
+
+# 2026-09-28 起原始数据由 user_repo 采集（每日合并产出一个日文件），
+# 文件名兼容两种历史命名：
+#   battery_status_YYYY-MM-DD.parquet  —— 旧的 30s 任务（已停用并归档）
+#   battery_YYYY-MM-DD.parquet         —— user_repo 日合并产物（现行）
+# 注意必须精确匹配「日期 + .parquet」，避免把 staging 批次
+# （battery_YYYY-MM-DD_pNNN.parquet）当成日文件读进来。
+_RAW_NAME_RE = re.compile(r'^battery(?:_status)?_(\d{4}-\d{2}-\d{2})\.parquet$', re.IGNORECASE)
+
+
+def parse_raw_date(filename):
+    """从原始 parquet 文件名取出日期字符串（YYYY-MM-DD）；不匹配返回 None。"""
+    m = _RAW_NAME_RE.match(filename)
+    return m.group(1) if m else None
 DISTANCE_UNIT_KM = True
 GPS_FILTER = True
 CSV_ENCODING = 'utf-8'
@@ -106,6 +121,22 @@ MIN_HOUR_COVERAGE = 20
 # ==============================================================================
 # 辅助函数
 # ==============================================================================
+
+def _max_haversine_distance(points: np.ndarray) -> float:
+    """计算点集内的最大 Haversine 距离（km），使用上三角矩阵避免冗余计算"""
+    if len(points) < 2:
+        return 0.0
+    lat1 = points[:, 0][:, np.newaxis]
+    lon1 = points[:, 1][:, np.newaxis]
+    lat2 = points[:, 0][np.newaxis, :]
+    lon2 = points[:, 1][np.newaxis, :]
+    dlat = np.radians(lat2 - lat1)
+    dlon = np.radians(lon2 - lon1)
+    a = np.sin(dlat/2)**2 + np.cos(np.radians(lat1)) * np.cos(np.radians(lat2)) * np.sin(dlon/2)**2
+    dist_matrix = 2 * 6371 * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
+    upper_tri = np.triu(dist_matrix, k=1)
+    return float(np.max(upper_tri)) if upper_tri.size > 0 else 0.0
+
 
 def get_real_center(group):
     """计算真实中心点（去除异常GPS点）"""
@@ -418,41 +449,14 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
                     lon_range = hull_input[:, 1].max() - hull_input[:, 1].min()
                     aspect_ratio = max(lat_range, lon_range) / (min(lat_range, lon_range) + 1e-10)
                     
-                    if aspect_ratio > 1000:
-                        hull_area = 0.0
-                        if len(hull_input) >= 2:
-                            lat1 = hull_input[:, 0][:, np.newaxis]
-                            lon1 = hull_input[:, 1][:, np.newaxis]
-                            lat2 = hull_input[:, 0][np.newaxis, :]
-                            lon2 = hull_input[:, 1][np.newaxis, :]
-                            dlat = np.radians(lat2 - lat1)
-                            dlon = np.radians(lon2 - lon1)
-                            a = np.sin(dlat/2)**2 + np.cos(np.radians(lat1)) * np.cos(np.radians(lat2)) * np.sin(dlon/2)**2
-                            dist_matrix = 2 * 6371 * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
-                            upper_tri = np.triu(dist_matrix, k=1)
-                            if upper_tri.size > 0:
-                                max_trip_distance = np.max(upper_tri)
-                        dist_to_center = haversine(center_lat, center_lon, riding_points[:,0], riding_points[:,1], 'km')
-                        r90_radius = np.quantile(dist_to_center, RADIUS_QUANTILES[0])
-                        r95_radius = np.quantile(dist_to_center, RADIUS_QUANTILES[1])
-                    else:
+                    max_trip_distance = _max_haversine_distance(hull_input)
+                    dist_to_center = haversine(center_lat, center_lon, riding_points[:,0], riding_points[:,1], 'km')
+                    r90_radius = np.quantile(dist_to_center, RADIUS_QUANTILES[0])
+                    r95_radius = np.quantile(dist_to_center, RADIUS_QUANTILES[1])
+                    if aspect_ratio <= 1000:
                         hull = ConvexHull(hull_input)
                         hull_points = hull_input[hull.vertices]
-                        if len(hull_points) >= 2:
-                            lat1 = hull_points[:, 0][:, np.newaxis]
-                            lon1 = hull_points[:, 1][:, np.newaxis]
-                            lat2 = hull_points[:, 0][np.newaxis, :]
-                            lon2 = hull_points[:, 1][np.newaxis, :]
-                            dlat = np.radians(lat2 - lat1)
-                            dlon = np.radians(lon2 - lon1)
-                            a = np.sin(dlat/2)**2 + np.cos(np.radians(lat1)) * np.cos(np.radians(lat2)) * np.sin(dlon/2)**2
-                            dist_matrix = 2 * 6371 * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
-                            upper_tri = np.triu(dist_matrix, k=1)
-                            if upper_tri.size > 0:
-                                max_trip_distance = np.max(upper_tri)
-                        dist_to_center = haversine(center_lat, center_lon, riding_points[:,0], riding_points[:,1], 'km')
-                        r90_radius = np.quantile(dist_to_center, RADIUS_QUANTILES[0])
-                        r95_radius = np.quantile(dist_to_center, RADIUS_QUANTILES[1])
+                        max_trip_distance = max(max_trip_distance, _max_haversine_distance(hull_points))
                         lat_per_km = 1 / 111.0
                         lon_per_km = 1 / (111.0 * math.cos(math.radians(center_lat))) if pd.notna(center_lat) else 1 / 111.0
                         points_km = np.zeros_like(hull_points)
@@ -528,7 +532,7 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             res['高峰骑行占比'] = peak_riding_ratio
 
             # -------------------------- 6. 速度指标计算 --------------------------
-            riding_speed_data = group.loc[group['有效里程_km'] > 0, ['速度', '时间戳']].dropna(subset=['速度'])
+            riding_speed_data = group.loc[group['有效里程_km'] > 0, ['速度', '时间戳']].dropna(subset=['速度']).copy()
             max_speed = 0.0
             max_speed_time = pd.NA
             avg_riding_speed = 0.0
@@ -605,10 +609,10 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
 
             # -------------------------- 9. 电流指标计算 --------------------------
             current_col_for_ride = '电流_骑行判定用' if '电流_骑行判定用' in group.columns else '电流'
-            riding_current_data = group.loc[group['骑行状态'] == 1, ['时间戳', current_col_for_ride]].dropna(subset=[current_col_for_ride])
+            riding_current_data = group.loc[group['骑行状态'] == 1, ['时间戳', current_col_for_ride]].dropna(subset=[current_col_for_ride]).copy()
             riding_current_data = riding_current_data.rename(columns={current_col_for_ride: '电流'})
             
-            riding_current_data = riding_current_data[(riding_current_data['电流'] >= MIN_VALID_CURRENT) & (riding_current_data['电流'] <= MAX_VALID_CURRENT)]
+            riding_current_data = riding_current_data[(riding_current_data['电流'] >= MIN_VALID_CURRENT) & (riding_current_data['电流'] <= MAX_VALID_CURRENT)].copy()
             full_current_data = group[current_col_for_ride].fillna(0)
             
             max_current = 0.0
@@ -837,10 +841,23 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
                 work_span_hours = (riding_time_data.max() - riding_time_data.min()) / 3600
                 res['工作时长覆盖(小时)'] = round(work_span_hours, 1)
 
-                # 骑行时刻分布（使用有效里程>0的点，与行驶距离逻辑一致）
-                riding_times = pd.to_datetime(
-                    group.loc[group['有效里程_km'] > 0, '时间戳'], unit='s', errors='coerce'
-                ).dropna()
+                # 骑行时刻分布 —— 基于真实行程（≥ MIN_RIDING_DURATION_MIN 分钟），过滤单个GPS噪声点
+                real_trip_timestamps = []
+                if '行程ID' in group.columns:
+                    for trip_id, trip_group in group.groupby('行程ID', dropna=True):
+                        trip_dur_min = (trip_group['时间戳'].max() - trip_group['时间戳'].min()) / 60
+                        if trip_dur_min >= MIN_RIDING_DURATION_MIN:
+                            real_trip_timestamps.append(trip_group['时间戳'])
+                if real_trip_timestamps:
+                    riding_times = pd.to_datetime(
+                        pd.concat(real_trip_timestamps), unit='s', errors='coerce'
+                    ).dropna()
+                else:
+                    # 回退：无有效行程时使用所有有效里程>0的点
+                    riding_times = pd.to_datetime(
+                        group.loc[group['有效里程_km'] > 0, '时间戳'], unit='s', errors='coerce'
+                    ).dropna()
+
                 if len(riding_times) > 0:
                     riding_hours_frac = riding_times.dt.hour + riding_times.dt.minute / 60.0
                     res['最早骑行时刻_h'] = round(riding_hours_frac.min(), 2)
@@ -968,19 +985,21 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
                     vehicle_desc += f"（注: 实测最高{max_speed}km/h 超出分类阈值，可能有个别高速骑行或GPS噪声）"
 
             # Step 2: 改装/超速检测（覆盖正常分类）
+            # 使用估算车辆功率（速度加权持续功率）而非峰值功率，避免瞬时尖峰干扰
             peak_power_w = res['峰值功率_W']
+            est_power_w = res.get('估算车辆功率_W', peak_power_w)
             avg_power_w = res['骑行平均功率_W']
             is_modified = False
             modify_reason = ""
             if has_real_ride and max_speed >= MODIFY_SPEED_THRESHOLD and riding_avg_current >= MODIFY_CURRENT_THRESHOLD:
                 is_modified = True
-                modify_reason = f"高速高电流（{max_speed}km/h + {riding_avg_current}A），峰值功率{peak_power_w:.0f}W"
+                modify_reason = f"高速高电流（{max_speed}km/h + {riding_avg_current}A），估算功率{est_power_w:.0f}W"
             elif has_real_ride and riding_avg_current >= MODIFY_CURRENT_HIGH:
                 is_modified = True
-                modify_reason = f"持续大电流放电（平均{riding_avg_current}A），峰值功率{peak_power_w:.0f}W"
-            elif has_real_ride and peak_power_w >= MODIFY_PEAK_POWER_W:
+                modify_reason = f"持续大电流放电（平均{riding_avg_current}A），估算功率{est_power_w:.0f}W"
+            elif has_real_ride and est_power_w >= MODIFY_PEAK_POWER_W:
                 is_modified = True
-                modify_reason = f"峰值功率异常（{peak_power_w:.0f}W），远超正常电动车功率范围"
+                modify_reason = f"估算功率异常（{est_power_w:.0f}W），远超正常电动车功率范围"
 
             if is_modified:
                 vehicle_type = "改装/超速车"
@@ -1105,6 +1124,14 @@ def calc_contract_metrics(df_sorted, battery_voltage_map: dict = None):
             res['用户形态说明'] = type_desc
             # ==================================================================================
 
+            # 清理 group 上的临时列，减少内存驻留
+            _temp_cols = ['前纬度', '前经度', '前时间戳', '相邻距离_km', '相邻距离_m',
+                          '时间间隔_min', '动态距离阈值_km', '有效位移', '骑行状态',
+                          '有效里程_km', '状态变化', '断连标记', '行程ID', '小时',
+                          '是否午间高峰', '是否晚间高峰', '是否夜间', '是否平峰',
+                          '放电状态', '放电块ID', '电池切换标记']
+            group.drop(columns=[c for c in _temp_cols if c in group.columns], inplace=True, errors='ignore')
+
         results.append(res)
 
     return pd.DataFrame(results)
@@ -1150,12 +1177,13 @@ def _check_data_completeness(df_raw, date_str):
 # ==============================================================================
 # 主处理函数
 # ==============================================================================
-def process_fact_layer(target_date: Optional[str] = None, skip_incomplete: bool = True):
+def process_fact_layer(target_date: Optional[str] = None, skip_incomplete: bool = True, recent_days: Optional[int] = None):
     """处理fact层数据
 
     Args:
         target_date: 目标日期 YYYY-MM-DD，None表示处理所有日期
         skip_incomplete: 是否跳过数据不完整的日期（默认True）
+        recent_days: 仅处理最近N天的源数据，None表示全量处理
 
     Returns:
         (processed, new_dates, skipped_dates) 三元组
@@ -1175,23 +1203,30 @@ def process_fact_layer(target_date: Optional[str] = None, skip_incomplete: bool 
     output_dir = EXPORT_PATH_FACT_DAILY
     os.makedirs(output_dir, exist_ok=True)
 
-    raw_files = sorted([f for f in os.listdir(raw_dir) if f.startswith('battery_status_') and f.endswith('.parquet')])
+    raw_files = sorted([f for f in os.listdir(raw_dir) if parse_raw_date(f)])
     if not raw_files:
         print("❌ 未找到原始数据文件")
         return {}, set(), {}
 
     today_str = datetime.now().strftime('%Y-%m-%d')
-    raw_files = [f for f in raw_files if f.replace('battery_status_', '').replace('.parquet', '') < today_str]
+    raw_files = [f for f in raw_files if parse_raw_date(f) < today_str]
     if not raw_files:
         print("❌ 未找到需要处理的数据（当天数据已过滤）")
         return {}, set(), {}
+
+    if recent_days:
+        all_dates = sorted([parse_raw_date(f) for f in raw_files])
+        cutoff_date = (datetime.now() - pd.Timedelta(days=recent_days)).strftime('%Y-%m-%d')
+        limited_dates = [d for d in all_dates if d >= cutoff_date]
+        raw_files = [f for f in raw_files if parse_raw_date(f) in set(limited_dates)]
+        print(f"📅 仅处理最近 {recent_days} 天: {len(limited_dates)} 个日期 ({limited_dates[0]} ~ {limited_dates[-1]})")
 
     processed = {}
     new_dates = set()
     skipped_dates = {}
 
     for filename in raw_files:
-        date_str = filename.replace('battery_status_', '').replace('.parquet', '')
+        date_str = parse_raw_date(filename)
 
         if target_date and date_str != target_date:
             continue

@@ -375,6 +375,8 @@ def process_snapshot_layer(target_date: Optional[str] = None, target_dates: Opti
             df_agg['当日峰值功率_W'] = g['峰值功率_W'].max()
         if '骑行平均功率_W' in df_fact.columns:
             df_agg['当日平均骑行功率_W'] = g['骑行平均功率_W'].mean().round(1)
+        if '估算车辆功率_W' in df_fact.columns:
+            df_agg['当日估算车辆功率_W'] = g['估算车辆功率_W'].mean().round(1)
 
         # 骑行时刻聚合
         df_agg['最早骑行时刻_h'] = g['最早骑行时刻_h'].min()

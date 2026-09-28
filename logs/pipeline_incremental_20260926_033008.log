@@ -1,0 +1,53 @@
+📋 日志文件: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_incremental_20260926_033008.log
+🕐 开始时间: 2026-09-26 03:30:08
+
+
+================================================================================
+🚀 执行模式: INCREMENTAL (增量处理)
+================================================================================
+
+================================================================================
+L1 Fact Layer - 客观事实层
+================================================================================
+🔋 电池电压映射表加载完成：99,504 条有效记录
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-02.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-03.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-04.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-05.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-06.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-07.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-08.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-09.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-10.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-11.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-12.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-13.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-14.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-15.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-16.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-17.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-18.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-19.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-20.parquet
+
+📊 处理日期: 2026-09-21
+   ✅ 加载完成：5,458,137 行数据
+   ⚠️  数据不完整(2026-09-21): 时间跨度仅7.1h（要求≥20h）; 仅覆盖8/24个小时（要求≥20），跳过统计
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-22.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-09-23.parquet
+
+📊 处理日期: 2026-09-24
+   ✅ 加载完成：12,243,974 行数据
+   ⚠️  数据不完整(2026-09-24): 时间跨度仅15.7h（要求≥20h）; 仅覆盖16/24个小时（要求≥20），跳过统计
+
+📊 处理日期: 2026-09-25
+   ✅ 加载完成：11,998,966 行数据
+   ⚠️  数据不完整(2026-09-25): 时间跨度仅15.6h（要求≥20h）; 仅覆盖16/24个小时（要求≥20），跳过统计
+   📋 跳过日期日志已更新: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\skipped_dates.json (3 个日期)
+
+✅ L1 Fact Layer 完成，处理 21 个日期（新增 0 个，跳过 3 个）
+   ✅ 无新增日期需要处理，流水线结束
+
+✅ 流水线执行成功
+🕐 结束时间: 2026-09-26 03:30:19
+📋 日志已保存: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_incremental_20260926_033008.log

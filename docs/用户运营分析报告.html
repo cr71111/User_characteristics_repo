@@ -1,0 +1,2225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>用户运营分析报告</title>
+
+<style>
+  :root {
+    --primary: #1a4d72;
+    --primary-light: #e8f1f8;
+    --accent: #2c7a7b;
+    --text: #2d3748;
+    --muted: #718096;
+    --border: #e2e8f0;
+    --stripe: #f7fafc;
+    --warn: #c53030;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Microsoft YaHei', 'PingFang SC', 'SimHei', sans-serif;
+    color: var(--text);
+    line-height: 1.4;
+    margin: 0;
+    padding: 18px 24px;
+    font-size: 12px;
+  }
+  .report-title {
+    text-align: center;
+    font-size: 21px;
+    color: var(--primary);
+    font-weight: 700;
+    padding: 14px 0 6px;
+    margin: 0 0 4px;
+    border-bottom: 3px solid var(--primary);
+  }
+  .meta {
+    text-align: center;
+    color: var(--muted);
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+  h2 {
+    font-size: 15px;
+    color: #fff;
+    background: var(--primary);
+    padding: 6px 14px;
+    border-radius: 4px;
+    margin: 12px 0 8px;
+    /* 内容自然流动分页，减少大面积留白；标题不孤立在页底 */
+    page-break-after: avoid;
+    break-after: avoid;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  h2:first-of-type {
+    margin-top: 4px;
+  }
+  h3 {
+    font-size: 13px;
+    color: var(--primary);
+    border-left: 4px solid var(--accent);
+    padding-left: 9px;
+    margin: 10px 0 5px;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+  p { margin: 4px 0; }
+  strong { color: var(--primary); }
+  blockquote {
+    background: var(--primary-light);
+    border-left: 3px solid var(--primary);
+    margin: 6px 0;
+    padding: 5px 10px;
+    color: #4a5568;
+    border-radius: 0 4px 4px 0;
+    font-size: 11.5px;
+  }
+  blockquote p { margin: 2px 0; }
+  code {
+    background: #edf2f7;
+    color: var(--warn);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11px;
+  }
+  hr {
+    border: none;
+    border-top: 1px dashed var(--border);
+    margin: 8px 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 11.5px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    /* 允许长表格跨页断行，避免大留白；行级保持不被切断 */
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  thead {
+    display: table-header-group;
+  }
+  th {
+    background: var(--primary);
+    color: #fff;
+    font-weight: 600;
+    padding: 5px 8px;
+    text-align: center;
+    border: 1px solid var(--primary);
+    white-space: nowrap;
+  }
+  td {
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    text-align: center;
+  }
+  tbody tr:nth-child(even) { background: var(--stripe); }
+  tbody tr:hover { background: var(--primary-light); }
+  td:first-child, th:first-child { text-align: left; }
+  /* 代理横向对比表：列数多，固定布局+小字号自适应宽度 */
+  table.agent-compare {
+    width: 100%;
+    table-layout: fixed;
+    font-size: 8.5px;
+    margin: 6px 0;
+  }
+  table.agent-compare th,
+  table.agent-compare td {
+    padding: 3px 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+    font-size: 8.5px;
+  }
+  table.agent-compare th {
+    word-break: break-all;
+    white-space: normal;
+    line-height: 1.1;
+  }
+  table.agent-compare td.metric-name,
+  table.agent-compare th.metric-name {
+    width: 105px;
+    min-width: 105px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--primary);
+    white-space: normal;
+    word-break: break-word;
+    background: var(--primary-light);
+  }
+  table.agent-compare td.total-col {
+    background: #e6f4ea;
+  }
+  table.agent-compare tbody tr:nth-child(even) { background: var(--stripe); }
+  ul, ol { padding-left: 20px; margin: 6px 0; }
+  li { margin: 2px 0; }
+  @page { margin: 9mm 9mm; }
+  /* 代理商横向对比章节：横向 A4，获得足够宽度容纳多列代理 */
+  @page agent-landscape {
+    size: A4 landscape;
+    margin: 8mm 8mm;
+  }
+  .agent-chapter {
+    page: agent-landscape;
+  }
+  /* 横向章节起始处强制分页，确保进入横向页面 */
+  .agent-chapter h2 {
+    page-break-before: always;
+    break-before: page;
+  }
+  /* 横向章节结束后回到竖向：下个章节强制分页 */
+  .agent-chapter-end {
+    page-break-before: always;
+    break-before: page;
+  }
+  /* 横向章节内表格字号可略大 */
+  .agent-chapter table.agent-compare {
+    font-size: 9.5px;
+  }
+  .agent-chapter table.agent-compare th,
+  .agent-chapter table.agent-compare td {
+    font-size: 9.5px;
+    padding: 3px 3px;
+  }
+</style>
+
+</head>
+<body>
+<h1>《两轮车换电平台用户运营分析报告》</h1>
+<blockquote>
+<p><strong>自动生成时间</strong>：2026-06-29 18:25:08
+<strong>数据来源</strong>：<code>docs/reports/</code> 目录下的 CSV/JSON 数据文件
+<strong>总用户数</strong>：18,591 人</p>
+</blockquote>
+<hr />
+<h2>一、管理层摘要</h2>
+<h3>1.1 核心指标看板</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>数值</th>
+<th>解读</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>总用户数</strong></td>
+<td>18,591 人</td>
+<td>全平台注册用户总量</td>
+</tr>
+<tr>
+<td><strong>数据窗口</strong></td>
+<td>近7天，人均有效数据 3.0 天</td>
+<td>出勤率 = 出勤天数 ÷ 有效数据天数</td>
+</tr>
+<tr>
+<td><strong>加权7天出勤均值</strong></td>
+<td>6.6 天（中位 7.0）</td>
+<td>按出勤率推算至满7天，消除数据窗口偏差</td>
+</tr>
+<tr>
+<td><strong>活跃用户（加权≥5天）</strong></td>
+<td>16,496 人 (88.7%)</td>
+<td>核心活跃群体</td>
+</tr>
+<tr>
+<td><strong>轻度活跃（加权1~5天）</strong></td>
+<td>1,808 人 (9.7%)</td>
+<td>有活动但频次偏低</td>
+</tr>
+<tr>
+<td><strong>沉默用户</strong></td>
+<td>287 人 (1.5%)</td>
+<td>有数据但出勤率为0</td>
+</tr>
+<tr>
+<td><strong>流失用户</strong></td>
+<td>0 人 (0.0%)</td>
+<td>近7天无任何有效数据</td>
+</tr>
+<tr>
+<td><strong>整体出勤率</strong></td>
+<td>94.3%</td>
+<td>出勤天数 ÷ 有效数据天数（非 /7）</td>
+</tr>
+<tr>
+<td><strong>人均日均骑行里程</strong></td>
+<td>51.2 km</td>
+<td>中位数 50.7 km</td>
+</tr>
+<tr>
+<td><strong>人均日均换电次数</strong></td>
+<td>1.7 次</td>
+<td>中位数 1.7 次</td>
+</tr>
+<tr>
+<td><strong>单次换电SOC消耗</strong></td>
+<td>32.1%</td>
+<td>取电85% → 还电53%（仅换电用户）</td>
+</tr>
+<tr>
+<td><strong>换电友好分均值</strong></td>
+<td>6.6</td>
+<td>越高表示换电行为越规范</td>
+</tr>
+<tr>
+<td><strong>深夜换电占比</strong></td>
+<td>31.9%</td>
+<td>夜间换电占比，反映夜间运营需求</td>
+</tr>
+<tr>
+<td><strong>平均骑行电流</strong></td>
+<td>17.02 A</td>
+<td>中位 16.13A, P90=27.70A</td>
+</tr>
+<tr>
+<td><strong>平均最大电流</strong></td>
+<td>46.02 A</td>
+<td>中位 44.43A, P90=64.34A</td>
+</tr>
+<tr>
+<td><strong>百公里电耗均值</strong></td>
+<td>6.32 kWh</td>
+<td>中位 4.44kWh, P90=6.84kWh</td>
+</tr>
+<tr>
+<td><strong>高风险用户占比</strong></td>
+<td>37.1%（6,900人）</td>
+<td>风险标签 ≠ 正常</td>
+</tr>
+<tr>
+<td><strong>优质用户占比</strong></td>
+<td>25.3%（4,704人）</td>
+<td>评分 ≥ P75 且无显著风险</td>
+</tr>
+<tr>
+<td><strong>高损耗用户占比</strong></td>
+<td>33.4%（6,204人）</td>
+<td>评分低或电池损耗高于均值</td>
+</tr>
+<tr>
+<td><strong>暴力用户</strong></td>
+<td>1.2%（219人）</td>
+<td>存在严重电池损害行为</td>
+</tr>
+<tr>
+<td><strong>人月均用电预估</strong></td>
+<td>68.1 度</td>
+<td>中位数 65.5度, P90=120.8度</td>
+</tr>
+<tr>
+<td><strong>月用电超标（&gt;150度）</strong></td>
+<td>3.2%（593人）</td>
+<td>超过盈亏线</td>
+</tr>
+<tr>
+<td><strong>设备正常在线</strong></td>
+<td>18,078 人 (97.2%)</td>
+<td>≤1天内有数据上报，正常活跃</td>
+</tr>
+<tr>
+<td><strong>设备暂离线</strong></td>
+<td>207 人 (1.1%)</td>
+<td>2~6天无新数据，正常休眠态</td>
+</tr>
+<tr>
+<td><strong>设备异常离线</strong></td>
+<td>306 人 (1.6%)</td>
+<td>≥7天无新数据，需关注设备状态</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>关于加权出勤的说明</strong>：由于数据窗口不满7天（人均仅 3.0 天有效数据），直接统计出勤天数会严重低估。
+加权7天出勤 = <code>近7d出勤率 × 7</code>，将出勤行为按规定比例推算至满7天窗口。
+例：用户在4天有效数据中出勤4天（出勤率100%）→ 加权推算 = 7天全勤。
+当前加权后人均出勤 <strong>6.6 天</strong>（中位 7.0 天），整体出勤率 <strong>94.3%</strong>。</p>
+</blockquote>
+<hr />
+<h2>二、用户整体结构分析</h2>
+<h3>2.1 用户等级分布</h3>
+<table>
+<thead>
+<tr>
+<th>用户等级</th>
+<th>人数</th>
+<th>占比</th>
+<th>平均评分</th>
+<th>平均电流(A)</th>
+<th>最大电流(A)</th>
+<th>百公里电耗(kWh)</th>
+<th>日均里程(km)</th>
+<th>出勤率</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>优质用户</td>
+<td>4,704</td>
+<td>25.3%</td>
+<td>93.8</td>
+<td>10.59</td>
+<td>32.81</td>
+<td>3.81</td>
+<td>31.29</td>
+<td>88%</td>
+</tr>
+<tr>
+<td>良好用户</td>
+<td>3,262</td>
+<td>17.5%</td>
+<td>75.8</td>
+<td>14.86</td>
+<td>41.31</td>
+<td>5.62</td>
+<td>47.57</td>
+<td>93%</td>
+</tr>
+<tr>
+<td>普通用户</td>
+<td>3,949</td>
+<td>21.2%</td>
+<td>63.0</td>
+<td>17.00</td>
+<td>50.15</td>
+<td>6.15</td>
+<td>54.85</td>
+<td>96%</td>
+</tr>
+<tr>
+<td>高损耗用户</td>
+<td>6,204</td>
+<td>33.4%</td>
+<td>41.4</td>
+<td>23.06</td>
+<td>55.42</td>
+<td>8.42</td>
+<td>67.42</td>
+<td>99%</td>
+</tr>
+<tr>
+<td>暴力</td>
+<td>219</td>
+<td>1.2%</td>
+<td>32.4</td>
+<td>19.71</td>
+<td>74.87</td>
+<td>14.60</td>
+<td>48.81</td>
+<td>94%</td>
+</tr>
+<tr>
+<td>沉默用户</td>
+<td>31</td>
+<td>0.2%</td>
+<td>20.0</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>0%</td>
+</tr>
+<tr>
+<td>观察期</td>
+<td>222</td>
+<td>1.2%</td>
+<td>75.8</td>
+<td>16.52</td>
+<td>36.79</td>
+<td>6.66</td>
+<td>14.78</td>
+<td>98%</td>
+</tr>
+</tbody>
+</table>
+<h3>2.2 各等级风险用户占比</h3>
+<table>
+<thead>
+<tr>
+<th>等级</th>
+<th>总人数</th>
+<th>风险用户数</th>
+<th>风险率</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>优质用户</td>
+<td>4,704</td>
+<td>156</td>
+<td>3.3%</td>
+</tr>
+<tr>
+<td>良好用户</td>
+<td>3,262</td>
+<td>410</td>
+<td>12.6%</td>
+</tr>
+<tr>
+<td>普通用户</td>
+<td>3,949</td>
+<td>1,638</td>
+<td>41.5%</td>
+</tr>
+<tr>
+<td>高损耗用户</td>
+<td>6,204</td>
+<td>4,441</td>
+<td>71.6%</td>
+</tr>
+<tr>
+<td>暴力</td>
+<td>219</td>
+<td>219</td>
+<td>100.0%</td>
+</tr>
+<tr>
+<td>沉默用户</td>
+<td>31</td>
+<td>0</td>
+<td>0.0%</td>
+</tr>
+<tr>
+<td>观察期</td>
+<td>222</td>
+<td>36</td>
+<td>16.2%</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>三、生命周期结构分析（加权）</h2>
+<blockquote>
+<p>加权逻辑：<code>加权7天出勤 = 近7d出勤率 × 7</code>，消除有效数据不足7天导致的偏差。
+<code>已到期</code> 和 <code>新用户</code> 保留原有判定（基于合约状态和入网日期），其余状态按加权出勤重新分类。</p>
+</blockquote>
+<h3>3.1 生命周期状态分布</h3>
+<table>
+<thead>
+<tr>
+<th>生命周期状态</th>
+<th>人数</th>
+<th>占比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>活跃</td>
+<td>16,225</td>
+<td>87.3%</td>
+</tr>
+<tr>
+<td>轻度活跃</td>
+<td>1,808</td>
+<td>9.7%</td>
+</tr>
+<tr>
+<td>沉默</td>
+<td>281</td>
+<td>1.5%</td>
+</tr>
+<tr>
+<td>新用户</td>
+<td>277</td>
+<td>1.5%</td>
+</tr>
+</tbody>
+</table>
+<h3>3.2 生命周期 × 设备在线状态</h3>
+<table>
+<thead>
+<tr>
+<th>生命周期</th>
+<th>总人数</th>
+<th>暂离线</th>
+<th>异常离线</th>
+<th>正常在线</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>活跃</td>
+<td>16,225</td>
+<td>172(1%)</td>
+<td>247(2%)</td>
+<td>15,806</td>
+</tr>
+<tr>
+<td>轻度活跃</td>
+<td>1,808</td>
+<td>30(2%)</td>
+<td>30(2%)</td>
+<td>1,748</td>
+</tr>
+<tr>
+<td>沉默</td>
+<td>281</td>
+<td>5(2%)</td>
+<td>29(10%)</td>
+<td>247</td>
+</tr>
+<tr>
+<td>新用户</td>
+<td>277</td>
+<td>0(0%)</td>
+<td>0(0%)</td>
+<td>277</td>
+</tr>
+</tbody>
+</table>
+<h3>3.3 各等级生命周期分布</h3>
+<table>
+<thead>
+<tr>
+<th>等级</th>
+<th>总数</th>
+<th>活跃</th>
+<th>轻度活跃</th>
+<th>沉默/流失</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>优质用户</td>
+<td>4,704</td>
+<td>3,749(80%)</td>
+<td>710(15%)</td>
+<td>245(5%)</td>
+</tr>
+<tr>
+<td>良好用户</td>
+<td>3,262</td>
+<td>2,727(84%)</td>
+<td>532(16%)</td>
+<td>3(0%)</td>
+</tr>
+<tr>
+<td>普通用户</td>
+<td>3,949</td>
+<td>3,555(90%)</td>
+<td>382(10%)</td>
+<td>1(0%)</td>
+</tr>
+<tr>
+<td>高损耗用户</td>
+<td>6,204</td>
+<td>6,002(97%)</td>
+<td>160(3%)</td>
+<td>0(0%)</td>
+</tr>
+<tr>
+<td>暴力</td>
+<td>219</td>
+<td>192(88%)</td>
+<td>24(11%)</td>
+<td>2(1%)</td>
+</tr>
+<tr>
+<td>沉默用户</td>
+<td>31</td>
+<td>0(0%)</td>
+<td>0(0%)</td>
+<td>30(97%)</td>
+</tr>
+<tr>
+<td>观察期</td>
+<td>222</td>
+<td>0(0%)</td>
+<td>0(0%)</td>
+<td>0(0%)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>四、风险标签分析</h2>
+<h3>4.1 风险标签 TOP 15</h3>
+<table>
+<thead>
+<tr>
+<th>风险标签</th>
+<th>人数</th>
+<th>占比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>正常</td>
+<td>11,691</td>
+<td>62.9%</td>
+</tr>
+<tr>
+<td>超保护板电流</td>
+<td>2,497</td>
+<td>13.4%</td>
+</tr>
+<tr>
+<td>低SOC告警</td>
+<td>1,418</td>
+<td>7.6%</td>
+</tr>
+<tr>
+<td>深度亏电</td>
+<td>806</td>
+<td>4.3%</td>
+</tr>
+<tr>
+<td>超保护板电流 / 低SOC告警</td>
+<td>449</td>
+<td>2.4%</td>
+</tr>
+<tr>
+<td>持续高耗流</td>
+<td>284</td>
+<td>1.5%</td>
+</tr>
+<tr>
+<td>超保护板电流 / 深度亏电</td>
+<td>271</td>
+<td>1.5%</td>
+</tr>
+<tr>
+<td>持续深度亏电</td>
+<td>199</td>
+<td>1.1%</td>
+</tr>
+<tr>
+<td>极端电流</td>
+<td>82</td>
+<td>0.4%</td>
+</tr>
+<tr>
+<td>持续高耗流 / 低SOC告警</td>
+<td>40</td>
+<td>0.2%</td>
+</tr>
+<tr>
+<td>持续高耗流 / 深度亏电</td>
+<td>37</td>
+<td>0.2%</td>
+</tr>
+<tr>
+<td>超保护板电流 / 持续深度亏电</td>
+<td>34</td>
+<td>0.2%</td>
+</tr>
+<tr>
+<td>电池温度偏高(&gt;55°C)</td>
+<td>28</td>
+<td>0.2%</td>
+</tr>
+<tr>
+<td>极端电流 / 低SOC告警</td>
+<td>26</td>
+<td>0.1%</td>
+</tr>
+<tr>
+<td>超保护板电流 / 电池温度偏高(&gt;55°C)</td>
+<td>25</td>
+<td>0.1%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>风险用户整体</strong>：6,900人（37.1%），
+平均最大电流 56.10A，
+平均百公里电耗 8.21kWh，
+平均重评分数 48.4。</p>
+<hr />
+<h2>五、用户形态分析</h2>
+<h3>5.1 用户形态分布</h3>
+<table>
+<thead>
+<tr>
+<th>用户形态</th>
+<th>人数</th>
+<th>占比</th>
+<th>平均电流(A)</th>
+<th>百公里电耗(kWh)</th>
+<th>日均里程(km)</th>
+<th>平均评分</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>专送骑手</td>
+<td>6,880</td>
+<td>37.0%</td>
+<td>17.41</td>
+<td>5.98</td>
+<td>58.18</td>
+<td>64.2</td>
+</tr>
+<tr>
+<td>众包骑手</td>
+<td>10,866</td>
+<td>58.4%</td>
+<td>17.74</td>
+<td>6.71</td>
+<td>50.21</td>
+<td>65.1</td>
+</tr>
+<tr>
+<td>地摊/储能</td>
+<td>27</td>
+<td>0.1%</td>
+<td>6.25</td>
+<td>15.56</td>
+<td>14.47</td>
+<td>73.9</td>
+</tr>
+<tr>
+<td>数据不足</td>
+<td>818</td>
+<td>4.4%</td>
+<td>4.68</td>
+<td>3.73</td>
+<td>6.15</td>
+<td>83.5</td>
+</tr>
+</tbody>
+</table>
+<h3>5.2 车辆形态分布</h3>
+<table>
+<thead>
+<tr>
+<th>车辆形态</th>
+<th>人数</th>
+<th>占比</th>
+<th>P90速度(km/h)</th>
+<th>最高速度(km/h)</th>
+<th>峰值功率(W)</th>
+<th>平均功率(W)</th>
+<th>日均里程(km)</th>
+<th>平均电流(A)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>电动自行车</td>
+<td>3,549</td>
+<td>19.1%</td>
+<td>8.1</td>
+<td>33.2</td>
+<td>2652</td>
+<td>857</td>
+<td>31.60</td>
+<td>12.27</td>
+</tr>
+<tr>
+<td>电动轻便摩托车</td>
+<td>10,543</td>
+<td>56.7%</td>
+<td>28.2</td>
+<td>52.3</td>
+<td>3183</td>
+<td>1078</td>
+<td>58.41</td>
+<td>16.15</td>
+</tr>
+<tr>
+<td>电动摩托车</td>
+<td>228</td>
+<td>1.2%</td>
+<td>40.6</td>
+<td>66.2</td>
+<td>3947</td>
+<td>1283</td>
+<td>57.67</td>
+<td>16.77</td>
+</tr>
+<tr>
+<td>改装/超速车</td>
+<td>3,526</td>
+<td>19.0%</td>
+<td>31.4</td>
+<td>60.2</td>
+<td>3755</td>
+<td>1756</td>
+<td>58.41</td>
+<td>27.22</td>
+</tr>
+<tr>
+<td>地摊/储能</td>
+<td>26</td>
+<td>0.1%</td>
+<td>8.6</td>
+<td>31.1</td>
+<td>2283</td>
+<td>466</td>
+<td>14.62</td>
+<td>5.84</td>
+</tr>
+<tr>
+<td>数据不足</td>
+<td>719</td>
+<td>3.9%</td>
+<td>5.8</td>
+<td>22.1</td>
+<td>1418</td>
+<td>416</td>
+<td>5.30</td>
+<td>3.72</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>分类规则</strong>（基于近7天 P95 速度分位数）：</p>
+<ul>
+<li>
+<p><strong>电动自行车</strong>：P95 ≤ 25 km/h（国标限速）</p>
+</li>
+<li>
+<p><strong>电动轻便摩托车</strong>：P95 在 25~50 km/h 之间</p>
+</li>
+<li>
+<p><strong>电动摩托车</strong>：P95 &gt; 50 km/h</p>
+</li>
+<li>
+<p><strong>改装/超速车</strong>：高速 + 高电流 同时满足，或峰值功率 ≥ 8000W</p>
+</li>
+<li>
+<p><strong>地摊/储能</strong>：非骑行用电场景（速度极低 + 持续耗电）</p>
+</li>
+<li>
+<p><strong>数据不足</strong>：无有效骑行数据，无法判定</p>
+</li>
+</ul>
+<p>注：表中"平均功率"由 峰值功率 × (平均电流/最大电流) 推算，反映骑行过程中的实际平均输出功率。</p>
+</blockquote>
+<h3>5.3 众包/专送判定特征对比</h3>
+<table>
+<thead>
+<tr>
+<th>特征指标</th>
+<th>专送骑手</th>
+<th>众包骑手</th>
+<th>全体平均</th>
+<th>文档标准参考</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>上线时间熵值</td>
+<td>4.06</td>
+<td>3.93</td>
+<td>3.99</td>
+<td>专送≤3.85，众包&gt;3.85</td>
+</tr>
+<tr>
+<td>路线曲折系数</td>
+<td>37.97</td>
+<td>24.99</td>
+<td>28.79</td>
+<td>专送≤3.0，众包&gt;3.0</td>
+</tr>
+<tr>
+<td>速度变异系数</td>
+<td>1.73</td>
+<td>1.44</td>
+<td>1.50</td>
+<td>专送≤1.0，众包&gt;1.0</td>
+</tr>
+<tr>
+<td>跨区域转移次数</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>专送&lt;3，众包&gt;3</td>
+</tr>
+<tr>
+<td>静止时长占比</td>
+<td>0.54</td>
+<td>0.72</td>
+<td>0.66</td>
+<td>专送&lt;0.5，众包&gt;0.5</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>注：特征阈值基于《众包专送判断.md》文档标准，专送骑手表现为规律性强、活动集中、路线顺路、速度稳定</p>
+</blockquote>
+<hr />
+<h2>六、换电行为分析</h2>
+<blockquote>
+<p>换电是本平台核心业务环节。以下从换电频次、SOC流转、时段偏好三维度刻画用户换电习惯。</p>
+</blockquote>
+<h3>6.1 换电频次分布</h3>
+<table>
+<thead>
+<tr>
+<th>换电频次档位</th>
+<th>人数</th>
+<th>占比</th>
+<th>日均里程(km)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>低频(&lt;1次/天)</td>
+<td>7,284</td>
+<td>39.2%</td>
+<td>21.9</td>
+</tr>
+<tr>
+<td>中低频(1~2次)</td>
+<td>5,600</td>
+<td>30.1%</td>
+<td>57.9</td>
+</tr>
+<tr>
+<td>中频(2~3次)</td>
+<td>3,486</td>
+<td>18.8%</td>
+<td>75.4</td>
+</tr>
+<tr>
+<td>高频(3~5次)</td>
+<td>1,938</td>
+<td>10.4%</td>
+<td>90.4</td>
+</tr>
+<tr>
+<td>超高频(&gt;5次)</td>
+<td>283</td>
+<td>1.5%</td>
+<td>106.5</td>
+</tr>
+</tbody>
+</table>
+<h3>6.2 换电SOC流转分析</h3>
+<blockquote>
+<p>统计口径：仅含近7天有换电记录的用户 16,777 人，剔除 0 次换电用户的空值干扰。</p>
+<p><strong>加权均值</strong>按用户近7天换电次数加权（避免高频用户被低频用户稀释）：例如一人换100次SOC=100%、一人换1次SOC=50%，简单均值=75%偏低，加权后≈99.5% 更贴近真实单次水平。</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>简单均值</th>
+<th>加权均值</th>
+<th>中位数</th>
+<th>P90</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>取电时平均SOC</td>
+<td>85.4%</td>
+<td>88.5%</td>
+<td>87.3%</td>
+<td>96.0%</td>
+<td>换电取走时的电池余量</td>
+</tr>
+<tr>
+<td>还电时平均SOC</td>
+<td>53.3%</td>
+<td>52.9%</td>
+<td>52.7%</td>
+<td>68.5%</td>
+<td>骑行结束归还时的余量</td>
+</tr>
+<tr>
+<td>单次换电SOC消耗</td>
+<td>32.1%</td>
+<td>35.7%</td>
+<td>33.2%</td>
+<td>47.1%</td>
+<td>单次换电周期内的电量消耗</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>深度放电预警</strong>：9人（0.1%）还电时SOC&lt;10%，长期深度放电加速电池衰减，建议引导提前换电。</p>
+</blockquote>
+<h3>6.3 换电时段偏好</h3>
+<table>
+<thead>
+<tr>
+<th>时段</th>
+<th>人均总次数</th>
+<th>人均日均次数</th>
+<th>占比均值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>高峰换电</td>
+<td>1.2</td>
+<td>0.39</td>
+<td>—</td>
+<td>午间+晚间高峰换电</td>
+</tr>
+<tr>
+<td>平峰换电</td>
+<td>2.3</td>
+<td>0.76</td>
+<td>34.1%</td>
+<td>日间非高峰换电</td>
+</tr>
+<tr>
+<td>深夜换电</td>
+<td>2.2</td>
+<td>0.72</td>
+<td>31.9%</td>
+<td>22:00后换电，反映夜间运营强度</td>
+</tr>
+</tbody>
+</table>
+<p><strong>换电时段偏好分布（近7天主导换电时段）</strong></p>
+<table>
+<thead>
+<tr>
+<th>换电时段偏好</th>
+<th>人数</th>
+<th>占比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>偏好深夜换电</td>
+<td>5,596</td>
+<td>33.4%</td>
+</tr>
+<tr>
+<td>偏好平峰换电</td>
+<td>4,301</td>
+<td>25.6%</td>
+</tr>
+<tr>
+<td>高峰换电为主</td>
+<td>3,317</td>
+<td>19.8%</td>
+</tr>
+<tr>
+<td>平峰+深夜混合</td>
+<td>2,673</td>
+<td>15.9%</td>
+</tr>
+<tr>
+<td>换电时段分散</td>
+<td>890</td>
+<td>5.3%</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>七、区域运营分析</h2>
+<h3>7.1 主要省份对比</h3>
+<table>
+<thead>
+<tr>
+<th>省份</th>
+<th>总用户</th>
+<th>优质率</th>
+<th>高损耗率</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>四川省</td>
+<td>8,918</td>
+<td>27%</td>
+<td>32%</td>
+</tr>
+<tr>
+<td>上海市</td>
+<td>5,057</td>
+<td>13%</td>
+<td>44%</td>
+</tr>
+<tr>
+<td>湖北省</td>
+<td>1,512</td>
+<td>37%</td>
+<td>21%</td>
+</tr>
+<tr>
+<td>内蒙古自治区</td>
+<td>1,230</td>
+<td>34%</td>
+<td>26%</td>
+</tr>
+<tr>
+<td>河北省</td>
+<td>877</td>
+<td>32%</td>
+<td>29%</td>
+</tr>
+<tr>
+<td>江苏省</td>
+<td>653</td>
+<td>37%</td>
+<td>22%</td>
+</tr>
+<tr>
+<td>山东省</td>
+<td>131</td>
+<td>20%</td>
+<td>55%</td>
+</tr>
+<tr>
+<td>云南省</td>
+<td>101</td>
+<td>43%</td>
+<td>15%</td>
+</tr>
+<tr>
+<td>重庆市</td>
+<td>81</td>
+<td>78%</td>
+<td>1%</td>
+</tr>
+<tr>
+<td>浙江省</td>
+<td>10</td>
+<td>60%</td>
+<td>0%</td>
+</tr>
+</tbody>
+</table>
+<h3>7.2 主要城市对比</h3>
+<table>
+<thead>
+<tr>
+<th>城市</th>
+<th>总用户</th>
+<th>优质率</th>
+<th>高损耗率</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>成都市</td>
+<td>6,021</td>
+<td>21%</td>
+<td>37%</td>
+</tr>
+<tr>
+<td>上海市</td>
+<td>5,057</td>
+<td>13%</td>
+<td>44%</td>
+</tr>
+<tr>
+<td>呼和浩特市</td>
+<td>1,230</td>
+<td>34%</td>
+<td>26%</td>
+</tr>
+<tr>
+<td>宜昌市</td>
+<td>1,117</td>
+<td>35%</td>
+<td>22%</td>
+</tr>
+<tr>
+<td>保定市</td>
+<td>877</td>
+<td>32%</td>
+<td>29%</td>
+</tr>
+<tr>
+<td>南通市</td>
+<td>647</td>
+<td>37%</td>
+<td>23%</td>
+</tr>
+<tr>
+<td>德阳市</td>
+<td>620</td>
+<td>54%</td>
+<td>12%</td>
+</tr>
+<tr>
+<td>达州市</td>
+<td>483</td>
+<td>34%</td>
+<td>25%</td>
+</tr>
+<tr>
+<td>南充市</td>
+<td>357</td>
+<td>38%</td>
+<td>24%</td>
+</tr>
+<tr>
+<td>宜宾市</td>
+<td>334</td>
+<td>38%</td>
+<td>22%</td>
+</tr>
+</tbody>
+</table>
+<h3>7.3 城市运营参数横向对比（TOP 10）</h3>
+<blockquote>
+<p>按用户规模 TOP 10 城市横向对比各运营参数，识别城市间运营差异。</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>城市</th>
+<th>用户数</th>
+<th>日均里程(km)</th>
+<th>日均换电(次)</th>
+<th>出勤率</th>
+<th>P90速度(km/h)</th>
+<th>单次SOC消耗(%)</th>
+<th>换电友好分</th>
+<th>深夜换电占比</th>
+<th>改装车占比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>成都市</td>
+<td>6,021</td>
+<td>46.6</td>
+<td>1.50</td>
+<td>93.1%</td>
+<td>27.7</td>
+<td>31.6</td>
+<td>6.5</td>
+<td>29.2%</td>
+<td>20.5%</td>
+</tr>
+<tr>
+<td>上海市</td>
+<td>5,057</td>
+<td>54.7</td>
+<td>2.16</td>
+<td>93.6%</td>
+<td>27.1</td>
+<td>35.8</td>
+<td>7.0</td>
+<td>36.2%</td>
+<td>27.8%</td>
+</tr>
+<tr>
+<td>呼和浩特市</td>
+<td>1,230</td>
+<td>50.0</td>
+<td>1.52</td>
+<td>96.2%</td>
+<td>17.8</td>
+<td>30.3</td>
+<td>6.3</td>
+<td>31.7%</td>
+<td>9.6%</td>
+</tr>
+<tr>
+<td>宜昌市</td>
+<td>1,117</td>
+<td>53.3</td>
+<td>1.65</td>
+<td>96.5%</td>
+<td>17.7</td>
+<td>28.5</td>
+<td>6.7</td>
+<td>32.2%</td>
+<td>14.7%</td>
+</tr>
+<tr>
+<td>保定市</td>
+<td>877</td>
+<td>53.9</td>
+<td>1.76</td>
+<td>94.7%</td>
+<td>20.9</td>
+<td>27.8</td>
+<td>6.5</td>
+<td>33.5%</td>
+<td>20.4%</td>
+</tr>
+<tr>
+<td>南通市</td>
+<td>647</td>
+<td>63.7</td>
+<td>1.83</td>
+<td>96.4%</td>
+<td>15.0</td>
+<td>30.2</td>
+<td>7.0</td>
+<td>33.6%</td>
+<td>12.4%</td>
+</tr>
+<tr>
+<td>德阳市</td>
+<td>620</td>
+<td>54.1</td>
+<td>1.38</td>
+<td>98.3%</td>
+<td>17.5</td>
+<td>31.4</td>
+<td>6.4</td>
+<td>31.2%</td>
+<td>5.3%</td>
+</tr>
+<tr>
+<td>达州市</td>
+<td>483</td>
+<td>47.2</td>
+<td>1.39</td>
+<td>97.3%</td>
+<td>20.5</td>
+<td>32.3</td>
+<td>6.7</td>
+<td>32.6%</td>
+<td>12.4%</td>
+</tr>
+<tr>
+<td>南充市</td>
+<td>357</td>
+<td>54.8</td>
+<td>1.62</td>
+<td>95.7%</td>
+<td>19.0</td>
+<td>30.3</td>
+<td>6.6</td>
+<td>28.5%</td>
+<td>6.2%</td>
+</tr>
+<tr>
+<td>宜宾市</td>
+<td>334</td>
+<td>49.2</td>
+<td>1.30</td>
+<td>96.0%</td>
+<td>17.7</td>
+<td>32.9</td>
+<td>6.3</td>
+<td>26.1%</td>
+<td>9.0%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>城市差异洞察</strong></p>
+<ul>
+<li><strong>里程差异</strong>：南通市日均里程最高（63.7km），成都市最低（46.6km），相差 17.1km</li>
+<li><strong>换电强度</strong>：上海市日均换电次数最高（2.16次/天）</li>
+<li><strong>夜间运营</strong>：上海市深夜换电占比最高（36.2%），夜间运营强度突出</li>
+</ul>
+<hr />
+<div class="agent-chapter">
+<h2>八、代理商横向对比（合资公司 + 自营）</h2>
+<blockquote>
+<p>统计口径：仅含一级代理为「合资公司」与「自营」的用户，共 16,989 人。</p>
+<p>数据源：<code>在网用户-加代理.csv</code> 按用户 id 匹配合并，对比指标与总体报告口径一致。</p>
+</blockquote>
+<h3>8.1 三级代理规模与用户质量</h3>
+<table class="agent-compare">
+<thead>
+<tr>
+<th>指标</th>
+<th>成都锂享</th>
+<th>上海锂享</th>
+<th>内蒙换电</th>
+<th>宜昌换电</th>
+<th>涿州换电</th>
+<th>如皋换电</th>
+<th>德阳换电</th>
+<th>达州换电</th>
+<th>成都6060</th>
+<th>宜宾换电</th>
+<th>南充换电</th>
+<th>自贡换电</th>
+<th>遂宁换电</th>
+<th>泸州合资</th>
+<th>资阳换电</th>
+<th>济南换电</th>
+<th>广安换电</th>
+<th>总体</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="metric-name">一级</td>
+<td>合资公司</td>
+<td>合资公司</td>
+<td>合资公司</td>
+<td>合资公司</td>
+<td>合资公司</td>
+<td>合资公司</td>
+<td>合资公司</td>
+<td>合资公司</td>
+<td>合资公司</td>
+<td>合资公司</td>
+<td>自营</td>
+<td>合资公司</td>
+<td>合资公司</td>
+<td>合资公司</td>
+<td>合资公司</td>
+<td>合资公司</td>
+<td>合资公司</td>
+<td class="total-col"><strong>—</strong></td>
+</tr>
+<tr>
+<td class="metric-name">用户数</td>
+<td>5,391</td>
+<td>4,795</td>
+<td>1,192</td>
+<td>1,031</td>
+<td>723</td>
+<td>638</td>
+<td>599</td>
+<td>472</td>
+<td>448</td>
+<td>328</td>
+<td>292</td>
+<td>248</td>
+<td>248</td>
+<td>187</td>
+<td>174</td>
+<td>129</td>
+<td>94</td>
+<td class="total-col"><strong>16,989</strong></td>
+</tr>
+<tr>
+<td class="metric-name">占比</td>
+<td>31.7%</td>
+<td>28.2%</td>
+<td>7.0%</td>
+<td>6.1%</td>
+<td>4.3%</td>
+<td>3.8%</td>
+<td>3.5%</td>
+<td>2.8%</td>
+<td>2.6%</td>
+<td>1.9%</td>
+<td>1.7%</td>
+<td>1.5%</td>
+<td>1.5%</td>
+<td>1.1%</td>
+<td>1.0%</td>
+<td>0.8%</td>
+<td>0.6%</td>
+<td class="total-col"><strong>100.0%</strong></td>
+</tr>
+<tr>
+<td class="metric-name">优质率(%)</td>
+<td>19.8</td>
+<td>13.2</td>
+<td>33.7</td>
+<td>30.6</td>
+<td>34.3</td>
+<td>36.4</td>
+<td>55.3</td>
+<td>33.5</td>
+<td>26.1</td>
+<td>37.2</td>
+<td>38.7</td>
+<td>34.3</td>
+<td>44.0</td>
+<td>36.9</td>
+<td>29.3</td>
+<td>18.6</td>
+<td>40.4</td>
+<td class="total-col"><strong>24.2</strong></td>
+</tr>
+<tr>
+<td class="metric-name">高损耗率(%)</td>
+<td>37.7</td>
+<td>44.6</td>
+<td>26.8</td>
+<td>25.7</td>
+<td>26.6</td>
+<td>22.7</td>
+<td>11.0</td>
+<td>25.4</td>
+<td>33.0</td>
+<td>22.0</td>
+<td>20.5</td>
+<td>22.2</td>
+<td>14.5</td>
+<td>25.1</td>
+<td>32.2</td>
+<td>55.8</td>
+<td>24.5</td>
+<td class="total-col"><strong>34.4</strong></td>
+</tr>
+<tr>
+<td class="metric-name">中风险率(%)</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td class="total-col"><strong>0.0</strong></td>
+</tr>
+</tbody>
+</table>
+<h3>8.2 三级代理运营参数横向对比</h3>
+<table class="agent-compare">
+<thead>
+<tr>
+<th>指标</th>
+<th>成都锂享</th>
+<th>上海锂享</th>
+<th>内蒙换电</th>
+<th>宜昌换电</th>
+<th>涿州换电</th>
+<th>如皋换电</th>
+<th>德阳换电</th>
+<th>达州换电</th>
+<th>成都6060</th>
+<th>宜宾换电</th>
+<th>南充换电</th>
+<th>自贡换电</th>
+<th>遂宁换电</th>
+<th>泸州合资</th>
+<th>资阳换电</th>
+<th>济南换电</th>
+<th>广安换电</th>
+<th>总体</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="metric-name">用户数</td>
+<td>5,391</td>
+<td>4,795</td>
+<td>1,192</td>
+<td>1,031</td>
+<td>723</td>
+<td>638</td>
+<td>599</td>
+<td>472</td>
+<td>448</td>
+<td>328</td>
+<td>292</td>
+<td>248</td>
+<td>248</td>
+<td>187</td>
+<td>174</td>
+<td>129</td>
+<td>94</td>
+<td class="total-col"><strong>16,989</strong></td>
+</tr>
+<tr>
+<td class="metric-name">日均里程(km)</td>
+<td>46.6</td>
+<td>54.0</td>
+<td>50.0</td>
+<td>53.6</td>
+<td>52.9</td>
+<td>64.0</td>
+<td>54.5</td>
+<td>47.7</td>
+<td>49.0</td>
+<td>49.2</td>
+<td>55.9</td>
+<td>44.6</td>
+<td>51.1</td>
+<td>48.1</td>
+<td>41.9</td>
+<td>49.4</td>
+<td>51.9</td>
+<td class="total-col"><strong>50.9</strong></td>
+</tr>
+<tr>
+<td class="metric-name">日均换电(次)</td>
+<td>1.52</td>
+<td>2.17</td>
+<td>1.54</td>
+<td>1.57</td>
+<td>1.76</td>
+<td>1.85</td>
+<td>1.38</td>
+<td>1.41</td>
+<td>1.54</td>
+<td>1.31</td>
+<td>1.61</td>
+<td>1.47</td>
+<td>1.36</td>
+<td>1.32</td>
+<td>1.38</td>
+<td>1.63</td>
+<td>1.36</td>
+<td class="total-col"><strong>1.71</strong></td>
+</tr>
+<tr>
+<td class="metric-name">出勤率(%)</td>
+<td>93.5</td>
+<td>93.7</td>
+<td>96.5</td>
+<td>96.0</td>
+<td>94.9</td>
+<td>96.5</td>
+<td>98.4</td>
+<td>97.3</td>
+<td>91.6</td>
+<td>96.2</td>
+<td>97.1</td>
+<td>93.5</td>
+<td>93.5</td>
+<td>90.7</td>
+<td>95.1</td>
+<td>90.3</td>
+<td>98.9</td>
+<td class="total-col"><strong>94.4</strong></td>
+</tr>
+<tr>
+<td class="metric-name">P90速度(km/h)</td>
+<td>27.9</td>
+<td>27.1</td>
+<td>18.0</td>
+<td>23.5</td>
+<td>19.2</td>
+<td>15.1</td>
+<td>17.0</td>
+<td>20.6</td>
+<td>26.3</td>
+<td>17.8</td>
+<td>17.1</td>
+<td>31.1</td>
+<td>21.7</td>
+<td>25.7</td>
+<td>27.8</td>
+<td>30.7</td>
+<td>21.1</td>
+<td class="total-col"><strong>24.8</strong></td>
+</tr>
+<tr>
+<td class="metric-name">单次SOC消耗(%)</td>
+<td>31.9</td>
+<td>35.9</td>
+<td>30.5</td>
+<td>28.1</td>
+<td>26.9</td>
+<td>30.3</td>
+<td>31.3</td>
+<td>32.4</td>
+<td>28.6</td>
+<td>33.0</td>
+<td>30.6</td>
+<td>28.2</td>
+<td>29.0</td>
+<td>33.1</td>
+<td>33.9</td>
+<td>31.6</td>
+<td>33.5</td>
+<td class="total-col"><strong>32.3</strong></td>
+</tr>
+<tr>
+<td class="metric-name">换电友好分</td>
+<td>6.5</td>
+<td>7.0</td>
+<td>6.3</td>
+<td>6.6</td>
+<td>6.5</td>
+<td>7.0</td>
+<td>6.4</td>
+<td>6.7</td>
+<td>6.8</td>
+<td>6.3</td>
+<td>6.6</td>
+<td>6.2</td>
+<td>6.5</td>
+<td>6.6</td>
+<td>6.2</td>
+<td>6.3</td>
+<td>6.2</td>
+<td class="total-col"><strong>6.7</strong></td>
+</tr>
+<tr>
+<td class="metric-name">深夜换电占比(%)</td>
+<td>29.0</td>
+<td>36.1</td>
+<td>31.9</td>
+<td>32.5</td>
+<td>33.5</td>
+<td>33.6</td>
+<td>31.4</td>
+<td>32.5</td>
+<td>33.4</td>
+<td>26.1</td>
+<td>29.4</td>
+<td>30.0</td>
+<td>28.4</td>
+<td>29.5</td>
+<td>22.2</td>
+<td>31.0</td>
+<td>26.7</td>
+<td class="total-col"><strong>32.0</strong></td>
+</tr>
+<tr>
+<td class="metric-name">改装车占比(%)</td>
+<td>20.5</td>
+<td>27.7</td>
+<td>9.6</td>
+<td>16.4</td>
+<td>19.2</td>
+<td>12.4</td>
+<td>5.0</td>
+<td>12.5</td>
+<td>16.7</td>
+<td>9.1</td>
+<td>5.5</td>
+<td>12.1</td>
+<td>5.6</td>
+<td>13.9</td>
+<td>12.6</td>
+<td>33.3</td>
+<td>4.3</td>
+<td class="total-col"><strong>19.3</strong></td>
+</tr>
+<tr>
+<td class="metric-name">高风险占比(%)</td>
+<td>40.7</td>
+<td>39.9</td>
+<td>42.7</td>
+<td>25.1</td>
+<td>38.7</td>
+<td>36.2</td>
+<td>27.5</td>
+<td>30.5</td>
+<td>29.9</td>
+<td>38.7</td>
+<td>32.9</td>
+<td>20.2</td>
+<td>20.2</td>
+<td>29.9</td>
+<td>33.9</td>
+<td>53.5</td>
+<td>42.6</td>
+<td class="total-col"><strong>37.5</strong></td>
+</tr>
+</tbody>
+</table>
+<h3>8.3 代理差异洞察</h3>
+<ul>
+<li><strong>里程差异</strong>：如皋换电 日均里程最高（64.0km），资阳换电 最低（41.9km）</li>
+<li><strong>换电强度</strong>：上海锂享 日均换电最高（2.17次/天），宜宾换电 最低（1.31次/天）</li>
+<li><strong>单次SOC消耗</strong>：上海锂享 最高（35.9%），涿州换电 最低（26.9%）—— SOC 消耗高反映单次骑行距离更长</li>
+<li><strong>夜间运营</strong>：上海锂享 深夜换电占比最高（36.1%）</li>
+</ul>
+</div>
+<hr />
+<div class="agent-chapter-end"></div>
+
+<h2>九、用户价值分析（二八法则）</h2>
+<h3>9.1 骑行里程集中度</h3>
+<table>
+<thead>
+<tr>
+<th>用户群体</th>
+<th>骑行占比</th>
+<th>平均日均里程</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TOP 10% 用户</td>
+<td>21.8%</td>
+<td>111.5 km</td>
+</tr>
+<tr>
+<td>TOP 20% 用户</td>
+<td>38.7%</td>
+<td>99.1 km</td>
+</tr>
+<tr>
+<td>全体</td>
+<td>100%</td>
+<td>51.1 km</td>
+</tr>
+</tbody>
+</table>
+<h3>9.2 月度用电集中度</h3>
+<table>
+<thead>
+<tr>
+<th>用户群体</th>
+<th>用电占比</th>
+<th>月均用电</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TOP 10% 用户</td>
+<td>21.4%</td>
+<td>146.0 度</td>
+</tr>
+<tr>
+<td>TOP 20% 用户</td>
+<td>37.6%</td>
+<td>127.9 度</td>
+</tr>
+<tr>
+<td>全体</td>
+<td>100%</td>
+<td>68.1 度</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>十、设备状态分析</h2>
+<blockquote>
+<p><strong>说明</strong>：<code>设备状态监控</code> = 以数据窗口最新统计日期为基准，距该日期的间隔天数。
+两轮车换电场景下电池仅在上报数据时"在线"，大部分时间处于休眠。
+<code>正常在线</code>（≤1天无新数据）：近1天内有数据上报，正常活跃。
+<code>暂离线</code>（2~6天无新数据）：正常休眠/无换电，不代表异常。
+<code>异常离线</code>（≥7天无新数据）：长期无换电记录，需关注设备是否已回收/丢失。</p>
+</blockquote>
+<h3>10.1 设备离线天数分档</h3>
+<table>
+<thead>
+<tr>
+<th>设备状态</th>
+<th>人数</th>
+<th>占比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>正常在线(≤1天)</td>
+<td>18,078</td>
+<td>97.2%</td>
+</tr>
+<tr>
+<td>暂离线(4-6天)</td>
+<td>207</td>
+<td>1.1%</td>
+</tr>
+<tr>
+<td>异常离线(7-14天)</td>
+<td>175</td>
+<td>0.9%</td>
+</tr>
+<tr>
+<td>异常离线(&gt;14天)</td>
+<td>131</td>
+<td>0.7%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>平均离线天数</strong>：1.3 天</p>
+<ul>
+<li>正常在线用户 18,078 人（97.2%），≤1天内有数据上报</li>
+<li>暂离线用户 207 人（1.1%），2~6天无数据，属正常休眠</li>
+<li>异常离线用户 306 人（1.6%），≥7天无数据记录，需关注</li>
+</ul>
+<hr />
+<h2>十一、策略建议分布</h2>
+<table>
+<thead>
+<tr>
+<th>策略建议</th>
+<th>人数</th>
+<th>占比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>留存激励</td>
+<td>4,685</td>
+<td>25.2%</td>
+</tr>
+<tr>
+<td>风险用户核查</td>
+<td>3,526</td>
+<td>19.0%</td>
+</tr>
+<tr>
+<td>限制预警</td>
+<td>3,116</td>
+<td>16.8%</td>
+</tr>
+<tr>
+<td>专送骑手关怀</td>
+<td>2,346</td>
+<td>12.6%</td>
+</tr>
+<tr>
+<td>众包骑手引导</td>
+<td>2,116</td>
+<td>11.4%</td>
+</tr>
+<tr>
+<td>维持服务</td>
+<td>2,062</td>
+<td>11.1%</td>
+</tr>
+<tr>
+<td>夜间高损耗预警</td>
+<td>307</td>
+<td>1.7%</td>
+</tr>
+<tr>
+<td>新手引导</td>
+<td>203</td>
+<td>1.1%</td>
+</tr>
+<tr>
+<td>清退处理</td>
+<td>126</td>
+<td>0.7%</td>
+</tr>
+<tr>
+<td>引导升级</td>
+<td>47</td>
+<td>0.3%</td>
+</tr>
+<tr>
+<td>激活唤醒</td>
+<td>31</td>
+<td>0.2%</td>
+</tr>
+<tr>
+<td>非正常用电核查</td>
+<td>26</td>
+<td>0.1%</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>十二、核心建议</h2>
+<h3>12.1 立即行动（P0）</h3>
+<ol>
+<li><strong>潍坊市区域深度排查</strong>：该城市 55% 用户为高损耗，需逐户排查是否改装车/电池老化/运营政策过松</li>
+<li><strong>219名暴力用户清退</strong>：平均最大电流 74.9A，远超安全线，建议限期整改否则终止服务</li>
+<li><strong>9名深度放电用户引导</strong>：还电SOC&lt;10%，长期深度放电加速电池衰减，推送提前换电提醒</li>
+</ol>
+<h3>12.2 短期优化（P1）</h3>
+<ol start="5">
+<li><strong>建立重庆市-潍坊市对标学习</strong>：将重庆市 78% 优质率的运营方法复制到潍坊市</li>
+<li><strong>307名夜间高损耗用户预警</strong>：夜间限流+电量阈值告警</li>
+</ol>
+<h3>12.3 中长期建设（P2）</h3>
+<ol start="7">
+<li><strong>优质用户会员体系</strong>：4,704名优质用户是基本盘，建立分级权益</li>
+<li><strong>电池寿命预测模型</strong>：基于电流/温度/SOC数据建立电池健康度评估</li>
+<li><strong>区域差异化运营策略</strong>：针对不同城市用户画像制定差异化阈值</li>
+</ol>
+<hr />
+<h2>十三、指标说明</h2>
+<blockquote>
+<p>本附录说明报告中各核心指标的定义与计算口径，便于准确解读。</p>
+</blockquote>
+<h3>13.1 用户分层指标</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>定义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用户等级_动态</td>
+<td>综合电流/电耗/出勤/里程等多维度评分后动态划分：优质/良好/普通/高损耗/暴力/沉默/观察期</td>
+</tr>
+<tr>
+<td>用户生命周期状态_7d</td>
+<td>基于合约状态与近7天出勤：新用户/活跃/轻度活跃/沉默/流失/已到期（本报告已剔除已到期）</td>
+</tr>
+<tr>
+<td>用户形态_综合_7d</td>
+<td>基于日均骑行时长、高峰占比、空间集中度与行为特征的骑手分类：专送/众包/地摊储能/数据不足</td>
+</tr>
+<tr>
+<td>车辆形态_7d</td>
+<td>基于P95速度分位数：电动自行车≤25km/h、轻便摩托25~50km/h、电摩&gt;50km/h、改装/超速车、地摊/储能</td>
+</tr>
+<tr>
+<td>重评分数</td>
+<td>用户综合评分，等级动态评定的核心依据</td>
+</tr>
+</tbody>
+</table>
+<h3>13.2 出勤与活跃指标</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>定义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>近7d出勤天数</td>
+<td>近7天中有骑行活动的天数</td>
+</tr>
+<tr>
+<td>近7d出勤率</td>
+<td>出勤天数 ÷ 有效数据天数（非 /7）</td>
+</tr>
+<tr>
+<td>近7天有数据天数</td>
+<td>近7天中有上报数据的日期数</td>
+</tr>
+<tr>
+<td>加权7天出勤</td>
+<td>近7d出勤率 × 7，将出勤行为按比例推算至满7天窗口，消除数据窗口不足偏差</td>
+</tr>
+</tbody>
+</table>
+<h3>13.3 换电与电池指标</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>定义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>近7d日均换电次数</td>
+<td>近7天总换电次数 ÷ 有效数据天数</td>
+</tr>
+<tr>
+<td>单次换电SOC消耗</td>
+<td>单次换电周期内电池SOC的消耗幅度（取电SOC − 还电SOC）</td>
+</tr>
+<tr>
+<td>取电时平均SOC</td>
+<td>换电取走满电电池时刻的电池荷电量</td>
+</tr>
+<tr>
+<td>还电时平均SOC</td>
+<td>骑行结束归还电池时刻的剩余荷电量，&lt;10%为深度放电</td>
+</tr>
+<tr>
+<td>近7d换电友好分</td>
+<td>综合换电SOC健康度与时段合理性的评分，越高越规范</td>
+</tr>
+<tr>
+<td>近7d深夜换电占比</td>
+<td>22:00后换电次数占总换电次数比例</td>
+</tr>
+<tr>
+<td>近7d最低SOC</td>
+<td>近7天观测到的最低电池荷电量</td>
+</tr>
+</tbody>
+</table>
+<h3>13.4 用电与能耗指标</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>定义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单合约月度用电度数预估_kWh</td>
+<td>基于近7天日均用电量推算的单合约月度用电量</td>
+</tr>
+<tr>
+<td>月用电盈亏线</td>
+<td>150度，超过此值用户用电超出包月套餐，可能产生亏损</td>
+</tr>
+<tr>
+<td>近7d百公里电耗_kWh</td>
+<td>每100公里消耗电量，衡量能耗效率</td>
+</tr>
+<tr>
+<td>近7d平均骑行电流_A</td>
+<td>骑行过程中平均放电电流，反映用电强度</td>
+</tr>
+<tr>
+<td>近7d最大电流_A</td>
+<td>骑行过程中峰值电流，过高提示暴力骑行/改装</td>
+</tr>
+</tbody>
+</table>
+<h3>13.5 骑行与空间行为指标</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>定义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>近7d总行驶距离_km</td>
+<td>近7天累计骑行里程</td>
+</tr>
+<tr>
+<td>日均里程</td>
+<td>近7d总行驶距离 ÷ 有效数据天数</td>
+</tr>
+<tr>
+<td>近7d高峰骑行占比</td>
+<td>午间/晚间高峰时段骑行时长占总骑行时长比例</td>
+</tr>
+<tr>
+<td>近7d平均上线时间熵值</td>
+<td>骑行时段分布的熵值，越低越规律（专送特征）</td>
+</tr>
+<tr>
+<td>近7d平均路线曲折系数</td>
+<td>实际轨迹与直线距离比，越低越顺路（专送特征）</td>
+</tr>
+<tr>
+<td>近7d平均速度变异系数</td>
+<td>速度波动程度，越低越稳定（专送特征）</td>
+</tr>
+<tr>
+<td>近7d_R90活动半径_km</td>
+<td>90%骑行点覆盖的半径，衡量活动范围</td>
+</tr>
+<tr>
+<td>近7d凸包覆盖面积_km2</td>
+<td>骑行轨迹凸包面积，衡量空间集中度</td>
+</tr>
+</tbody>
+</table>
+<h3>13.6 设备与风险指标</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>定义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>设备状态监控</td>
+<td>以最新统计日为基准，距上次上报天数：正常在线(≤1天)/暂离线(2~6天)/异常离线(≥7天)</td>
+</tr>
+<tr>
+<td>风险标签</td>
+<td>综合电流/速度/SOC等异常行为判定的风险等级，正常表示无显著风险</td>
+</tr>
+<tr>
+<td>策略建议</td>
+<td>基于用户画像自动生成的运营策略标签</td>
+</tr>
+<tr>
+<td>夜间高速风险</td>
+<td>夜间高速骑行行为的风险标识</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<blockquote>
+<p><strong>数据说明</strong>：本报告由 <code>generate_report.py</code> 自动生成于 2026-06-29 18:25:08，仅含合约期内用户。
+详细计算逻辑见 <a href="报告逻辑及计算方法.md">报告逻辑及计算方法.md</a>。</p>
+</blockquote>
+</body>
+</html>

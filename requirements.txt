@@ -7,3 +7,5 @@ fpdf2>=2.7
 pyarrow>=14.0
 xgboost>=2.0
 geopandas>=1.0
+markdown>=3.5
+playwright>=1.40

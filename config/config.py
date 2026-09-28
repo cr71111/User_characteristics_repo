@@ -22,8 +22,11 @@ def get_full_path(relative_path):
 # -------------------------- 2. 输入数据路径 --------------------------
 USER_BEHAVIOR_FOLDER = "用户行为习惯/用户特征画像"
 
-# 新数据源：每日parquet文件，文件名格式 battery_status_YYYY-MM-DD.parquet
-BATTERY_STATUS_FOLDER = f"{USER_BEHAVIOR_FOLDER}/每日用户数据汇总"
+# 新数据源：每日parquet文件（user_repo 每日合并产出）
+#   路径：用户行为习惯/用户特征画像/每日用户数据汇总/daily/
+#   文件名：battery_YYYY-MM-DD.parquet（兼容旧命名的 battery_status_YYYY-MM-DD.parquet）
+#   2026-09-28 起：旧的 30s 采集任务已停用，其历史文件已归档到 E:\用户用电情况\存档
+BATTERY_STATUS_FOLDER = f"{USER_BEHAVIOR_FOLDER}/每日用户数据汇总/daily"
 EXPORT_PATH_BATTERY_STATUS_DAILY = get_full_path(f"{BATTERY_STATUS_FOLDER}")
 
 # 省市区围栏（项目内 data/ 目录）

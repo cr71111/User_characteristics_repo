@@ -354,7 +354,6 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
         ('当日最大电流_A', '近7d最大电流_A'),
         ('当日最高温度_℃', '近7d最高温度_℃'),
         ('当日峰值功率_W', '近7d峰值功率_W'),
-        ('当日峰值功率_W', '近7d估算车辆功率_W'),
         ('最大单合约活动半径_km', '近7d最大活动半径_km'),
         ('R90活动半径_km', '近7d_R90活动半径_km'),
         ('最大凸包覆盖面积_km2', '近7d凸包覆盖面积_km2'),
@@ -367,6 +366,14 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
             res[roll_col] = round(val, 2) if pd.notna(val) else 0
         else:
             res[roll_col] = 0
+
+    # 近7d估算车辆功率_W：使用中位数聚合（排除极端值，反映车辆常态功率）
+    # 与峰值功率区分：峰值用max()检测异常，估算用median()反映常态
+    if '当日估算车辆功率_W' in complete_group.columns:
+        val = complete_group['当日估算车辆功率_W'].median()
+        res['近7d估算车辆功率_W'] = round(val, 2) if pd.notna(val) else 0
+    else:
+        res['近7d估算车辆功率_W'] = 0
 
     # 新增特征聚合（文档标准：众包/专送判定增强）
     avg_cols_7d = [
@@ -385,7 +392,7 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
 
     if '最晚骑行时刻_h' in complete_group.columns:
         valid = complete_group['最晚骑行时刻_h'][complete_group['最晚骑行时刻_h'] >= 0]
-        res['近7d最晚骑行时刻_h'] = round(valid.max(), 2) if len(valid) > 0 else -1
+        res['近7d最晚骑行时刻_h'] = round(valid.quantile(0.9), 2) if len(valid) > 0 else -1
     else:
         res['近7d最晚骑行时刻_h'] = -1
 
@@ -401,7 +408,7 @@ def _calc_single_user_7d_rolling(window_data: pd.DataFrame, user_id: str, latest
 
     if '最早骑行时刻_h' in complete_group.columns:
         valid = complete_group['最早骑行时刻_h'][complete_group['最早骑行时刻_h'] >= 0]
-        res['近7d最早骑行时刻_h'] = round(valid.min(), 2) if len(valid) > 0 else -1
+        res['近7d最早骑行时刻_h'] = round(valid.quantile(0.1), 2) if len(valid) > 0 else -1
     else:
         res['近7d最早骑行时刻_h'] = -1
 

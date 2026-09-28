@@ -1,0 +1,181 @@
+📋 日志文件: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_incremental_20260626_033008.log
+🕐 开始时间: 2026-06-26 03:30:08
+
+
+================================================================================
+🚀 执行模式: INCREMENTAL (增量处理)
+================================================================================
+
+================================================================================
+L1 Fact Layer - 客观事实层
+================================================================================
+🔋 电池电压映射表加载完成：99,504 条有效记录
+
+📊 处理日期: 2026-04-23
+   ✅ 加载完成：11,010,566 行数据
+   ⚠️  数据不完整(2026-04-23): 时间跨度仅12.5h（要求≥20h）; 仅覆盖13/24个小时（要求≥20），跳过统计
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-04-24.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-04-25.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-04-26.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-04-27.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-04-28.parquet
+
+📊 处理日期: 2026-04-29
+   ✅ 加载完成：6,229,666 行数据
+   ⚠️  数据不完整(2026-04-29): 时间跨度仅8.6h（要求≥20h）; 仅覆盖9/24个小时（要求≥20），跳过统计
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-04-30.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-01.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-02.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-03.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-04.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-05.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-06.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-07.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-08.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-09.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-10.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-11.parquet
+
+📊 处理日期: 2026-05-12
+   ✅ 加载完成：11,215,638 行数据
+   ⚠️  数据不完整(2026-05-12): 时间跨度仅18.9h（要求≥20h）; 仅覆盖19/24个小时（要求≥20），跳过统计
+
+📊 处理日期: 2026-05-15
+   ✅ 加载完成：5,053,093 行数据
+   ⚠️  数据不完整(2026-05-15): 时间跨度仅6.0h（要求≥20h）; 仅覆盖7/24个小时（要求≥20），跳过统计
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-16.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-17.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-18.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-19.parquet
+
+📊 处理日期: 2026-05-20
+   ✅ 加载完成：3,444,058 行数据
+   ⚠️  数据不完整(2026-05-20): 时间跨度仅4.9h（要求≥20h）; 仅覆盖5/24个小时（要求≥20），跳过统计
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-21.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-22.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-23.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-24.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-25.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-26.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-27.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-28.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-29.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-05-30.parquet
+
+📊 处理日期: 2026-05-31
+   ✅ 加载完成：12,911,539 行数据
+   ⚠️  数据不完整(2026-05-31): 时间跨度仅14.6h（要求≥20h）; 仅覆盖15/24个小时（要求≥20），跳过统计
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-01.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-02.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-03.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-04.parquet
+
+📊 处理日期: 2026-06-05-CR71-DESKTOP
+⚠️ 读取原始数据失败 E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像/每日用户数据汇总\battery_status_2026-06-05-CR71-DESKTOP.parquet: Could not open Parquet input source '<Buffer>': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-05.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-06.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-07.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-08.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-09.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-10.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-11.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-12.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-13.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-14.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-15.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-16.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-17.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-18.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-19.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-20.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-21.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-22.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-23.parquet
+⏭️  L1 已存在，跳过: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-24.parquet
+
+📊 处理日期: 2026-06-25
+   ✅ 加载完成：15,655,220 行数据
+   ✅ 清洗完成：15,466,437 行有效数据
+🗺️  执行GPS空间匹配...
+🗺️  加载地理围栏数据...
+✅ 三级围栏加载完成：省 42 个，市 388 个，区县 2898 个，耗时5.07s
+   🗺️ 坐标降维：18885 个点 -> 16838 个唯一坐标
+   🗺️ 正在执行空间匹配（降维后）...
+   ✅ L1 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\2026-06-25.parquet (18,890 个合约日记录)
+   📋 跳过日期日志已更新: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\fact/daily\skipped_dates.json (6 个日期)
+
+✅ L1 Fact Layer 完成，处理 56 个日期（新增 2 个，跳过 6 个）
+
+   📋 新增日期: ['2026-06-05-CR71-DESKTOP', '2026-06-25']
+
+================================================================================
+L2 Snapshot Layer - 用户日级快照层
+================================================================================
+
+📊 处理日期: 2026-06-25
+✅ L2 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\snapshot/user_daily.parquet (18857 用户日记录)
+
+================================================================================
+L3 Lifecycle Layer - 用户生命周期层
+================================================================================
+
+[1/6] 加载快照数据...
+   加载完成：456,874 条记录
+
+[2/6] 计算7天滚动指标...
+计算7天滚动指标...
+   完成：25,219 个用户
+
+[3/6] 计算月度用电预估...
+   ✅ 月度出勤预估明细已保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\lifecycle\user_monthly_attendance_detail.csv (25,219 用户)
+
+[3.5/6] 加载合约信息...
+📂 正在加载用户合约信息表...
+✅ 用户合约信息表加载完成：共 182591 个用户
+   ✅ 合约信息注入完成
+
+[4/6] 动态阈值计算与用户评分...
+[DynamicThresholds] [CHANGED] Data fingerprint changed or baseline expired, recomputing thresholds
+   Data source changed, rebuilding baseline
+   Baseline expired (66d > 30d)
+[DynamicThresholds] [CALC] Computing quantiles from data...
+
+[Distribution Shift Detection Report]
+  [OK] No significant shift detected
+[DynamicThresholds] [DEBUG] EMA配置状态 - use_ema: True
+[DynamicThresholds] [DEBUG] 分布漂移检测结果 - has_shift: False
+[DynamicThresholds] [EMA] ℹ️ 未检测到分布漂移，保持当前基准线不变
+   评分分类完成
+
+[4.5/6] 计算完全体画像衍生指标...
+
+[5/6] 生命周期状态判定...
+
+[5.5/6] 生成完全体画像文本...
+
+[6/6] 保存结果...
+   L3 保存: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\lifecycle/user_7d.parquet (25,219 用户)
+
+================================================================================
+L4 Report Layer - 报告输出层
+================================================================================
+
+[1/1] 加载生命周期数据...
+   ✅ 加载完成：25,219 个用户
+
+生成报告文件...
+   ✅ 用户明细: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\user_detail.csv
+   ✅ 用户7天滚动全量数据: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\user_7d_full.csv (25,219 用户, 109 字段)
+   ✅ 等级分布: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\level_distribution.csv
+   ✅ 风险告警: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\risk_alerts.csv (8780 用户)
+   ✅ 月度出勤预估明细: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\user_monthly_attendance_detail.csv (25,219 用户)
+   ✅ 漂移报告: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\shift_report.json
+   ✅ 文本摘要: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports\summary.txt
+
+✅ L4 Report Layer 完成，报告目录: E:\OneDrive\DataBase\DataBase\用户行为习惯/用户特征画像\reports
+
+⏱️  增量流水线完成，总耗时: 3140.13 秒
+
+✅ 流水线执行成功
+🕐 结束时间: 2026-06-26 04:22:28
+📋 日志已保存: E:\OneDrive\DataBase\User_characteristics_repo\logs\pipeline_incremental_20260626_033008.log
